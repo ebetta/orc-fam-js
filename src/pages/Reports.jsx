@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
-import { Tag } from "@/api/entities";
-import { Transaction } from "@/api/entities";
-import { Budget } from "@/api/entities";
+// import { Tag } from "@/api/entities"; // Removed
+// import { Transaction } from "@/api/entities"; // Removed
+// import { Budget } from "@/api/entities"; // Removed
+import { supabase } from "@/lib/supabaseClient"; // Added
 import { motion } from "framer-motion";
 
 import ReportsHeader from "../components/reports/ReportsHeader";
@@ -30,29 +31,36 @@ export default function ReportsPage() {
   const loadData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [tagsData, transactionsData, budgetsData] = await Promise.all([
-        Tag.list(),
-        Transaction.list(),
-        Budget.list(),
+      const [tagsResponse, transactionsResponse, budgetsResponse] = await Promise.all([
+        supabase.from('tags').select('*'),
+        supabase.from('transactions').select('*'),
+        supabase.from('budgets').select('*'),
       ]);
+
+      if (tagsResponse.error) throw tagsResponse.error;
+      if (transactionsResponse.error) throw transactionsResponse.error;
+      if (budgetsResponse.error) throw budgetsResponse.error;
+
+      const tagsData = tagsResponse.data || [];
+      const transactionsData = transactionsResponse.data || [];
+      const budgetsData = budgetsResponse.data || [];
+
       setAllTags(tagsData);
       setAllTransactions(transactionsData);
 
-      // Initialize all tags as selected
       const initialSelectedTags = {};
       tagsData.forEach(tag => {
         initialSelectedTags[tag.id] = true;
       });
       setFilters(prev => ({ ...prev, selectedTags: initialSelectedTags }));
       
-       // Pre-calculate spent amount for budgets
       const budgetsWithSpent = budgetsData.map(budget => {
         const budgetStartDate = new Date(budget.start_date);
         const budgetEndDate = new Date(budget.end_date);
         const spent_amount = transactionsData
           .filter(t => 
             t.transaction_type === 'expense' &&
-            t.tag_id === budget.tag_id &&
+            t.tag_id === budget.tag_id && // UUID comparison
             new Date(t.transaction_date) >= budgetStartDate &&
             new Date(t.transaction_date) <= budgetEndDate
           )
@@ -62,7 +70,7 @@ export default function ReportsPage() {
       setAllBudgets(budgetsWithSpent);
 
     } catch (error) {
-      console.error("Error loading report data:", error);
+      console.error("Error loading report data:", error.message);
     }
     setIsLoading(false);
   }, []);

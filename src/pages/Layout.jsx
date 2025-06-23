@@ -201,12 +201,11 @@ export default function Layout({ children, currentPageName }) {
           </SidebarContent>
 
           <SidebarFooter className="border-t border-gray-100 p-4">
-            {user ? ( // Check if user object exists
+            {user && ( // Use logical AND to render only if user exists
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <Avatar className="h-10 w-10">
                     <AvatarFallback className="bg-green-100 text-green-700 font-semibold">
-                      {/* Supabase user object might have email, but full_name comes from user_metadata */}
                       {user.user_metadata?.full_name?.charAt(0) || user.email?.charAt(0).toUpperCase() || 'U'}
                     </AvatarFallback>
                   </Avatar>

@@ -1,9 +1,10 @@
 
 import React, { useState, useEffect } from "react";
-import { Account } from "@/api/entities";
-import { Transaction } from "@/api/entities";
-import { Tag } from "@/api/entities";
-import { User } from "@/api/entities";
+// import { Account } from "@/api/entities"; // Removed
+// import { Transaction } from "@/api/entities"; // Removed
+// import { Tag } from "@/api/entities"; // Removed
+// import { User } from "@/api/entities"; // Removed
+import { supabase } from "@/lib/supabaseClient"; // Added
 import { motion } from "framer-motion";
 import { useCurrencyConversion } from "../components/utils/CurrencyConverter";
 
@@ -24,61 +25,58 @@ export default function Dashboard() {
   const { preloadExchangeRates } = useCurrencyConversion();
 
   useEffect(() => {
+    // User data is already available in Layout or via supabase.auth.getUser() directly if needed
+    // For this dashboard, we'll fetch user data again if WelcomeCard needs specific fields not in session.
+    // However, the `user` state here was from Base44 User.me(). Supabase user is handled by Layout.
+    // We can get it from supabase.auth.getUser() if needed by WelcomeCard.
+    // For now, let's fetch Supabase user data for the WelcomeCard.
+    const fetchCurrentUser = async () => {
+      const { data: { user: currentUser } } = await supabase.auth.getUser();
+      setUser(currentUser); // This sets the user for WelcomeCard
+    };
+    fetchCurrentUser();
     loadDashboardData();
   }, []);
 
   const loadDashboardData = async () => {
     setIsLoading(true);
     try {
-      // Carregar dados com controle de rate limit
-      const [userData] = await Promise.all([
-        User.me().catch(err => {
-          console.error("Erro ao carregar usuário:", err);
-          return null;
-        })
-      ]);
+      // Fetch data using Supabase
+      const { data: accountsData, error: accountsError } = await supabase
+        .from('accounts')
+        .select('*')
+        .order('updated_at', { ascending: false });
+      if (accountsError) console.error("Erro ao carregar contas:", accountsError);
+      setAccounts(accountsData || []);
+
+      // Fetch recent transactions
+      const { data: recentTransactionsData, error: recentTransactionsError } = await supabase
+        .from('transactions')
+        .select('*')
+        .order('transaction_date', { ascending: false })
+        .limit(5);
+      if (recentTransactionsError) console.error("Erro ao carregar transações recentes:", recentTransactionsError);
+      setTransactions(recentTransactionsData || []);
+
+      // Fetch all transactions for charts (up to 500)
+      const { data: allTransactionsData, error: allTransactionsError } = await supabase
+        .from('transactions')
+        .select('*')
+        .order('transaction_date', { ascending: false })
+        .limit(500);
+      if (allTransactionsError) console.error("Erro ao carregar todas as transações:", allTransactionsError);
+      setAllTransactions(allTransactionsData || []);
       
-      setUser(userData);
+      const { data: tagsData, error: tagsError } = await supabase
+        .from('tags')
+        .select('*');
+      if (tagsError) console.error("Erro ao carregar tags:", tagsError);
+      setTags(tagsData || []);
 
-      // Carregar contas primeiro
-      const accountsData = await Account.list("-updated_date").catch(err => {
-        console.error("Erro ao carregar contas:", err);
-        return [];
-      });
-      setAccounts(accountsData);
-
-      // Aguardar um pouco antes da próxima chamada
-      await new Promise(resolve => setTimeout(resolve, 200));
-
-      // Carregar transações com limite menor para o dashboard
-      const recentTransactionsData = await Transaction.list("-transaction_date", 5).catch(err => {
-        console.error("Erro ao carregar transações recentes:", err);
-        return [];
-      });
-      setTransactions(recentTransactionsData);
-
-      // Aguardar um pouco antes da próxima chamada
-      await new Promise(resolve => setTimeout(resolve, 200));
-
-      // Carregar todas as transações para gráficos (com limite razoável)
-      const allTransactionsData = await Transaction.list("-transaction_date", 500).catch(err => {
-        console.error("Erro ao carregar todas as transações:", err);
-        return [];
-      });
-      setAllTransactions(allTransactionsData);
-
-      // Aguardar um pouco antes da próxima chamada
-      await new Promise(resolve => setTimeout(resolve, 200));
-
-      const tagsData = await Tag.list().catch(err => {
-        console.error("Erro ao carregar tags:", err);
-        return [];
-      });
-      setTags(tagsData);
-
-      // Pré-carregar cotações das moedas utilizadas nas contas
-      if (accountsData.length > 0) {
-        const uniqueCurrencies = [...new Set(accountsData.map(acc => acc.currency || 'BRL'))];
+      // Pré-carregar cotações
+      const currentAccounts = accountsData || [];
+      if (currentAccounts.length > 0) {
+        const uniqueCurrencies = [...new Set(currentAccounts.map(acc => acc.currency || 'BRL'))];
         const foreignCurrencies = uniqueCurrencies.filter(curr => curr !== 'BRL');
         
         if (foreignCurrencies.length > 0) {
@@ -94,9 +92,13 @@ export default function Dashboard() {
   };
 
   const calculateNetWorth = () => {
+    // Simplified: Sum of initial balances. True net worth requires transaction processing.
+    // This matches the change made in Accounts where current_balance was removed.
+    // For a more accurate dashboard net worth, we'd need to calculate it based on transactions.
+    // This can be a future enhancement.
     return accounts.reduce((total, account) => {
       if (account.is_active === false) return total;
-      return total + (account.current_balance || account.initial_balance || 0);
+      return total + (parseFloat(account.initial_balance) || 0);
     }, 0);
   };
 
