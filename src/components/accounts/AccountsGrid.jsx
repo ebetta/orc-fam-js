@@ -10,6 +10,7 @@ import {
   TrendingUp,
   Banknote,
   Edit,
+  Trash2, // Added Trash2 icon for delete
   MoreVertical
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -60,7 +61,7 @@ const accountTypeConfig = {
   }
 };
 
-export default function AccountsGrid({ accounts, isLoading, onEditAccount }) {
+export default function AccountsGrid({ accounts, isLoading, onEditAccount, onDeleteAccount }) { // Added onDeleteAccount prop
   const formatCurrency = (amount, currency = 'BRL') => {
     return formatCurrencyWithSymbol(amount, currency);
   };
@@ -114,7 +115,8 @@ export default function AccountsGrid({ accounts, isLoading, onEditAccount }) {
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {accounts.map((account, index) => {
         const config = accountTypeConfig[account.account_type] || accountTypeConfig.checking;
-        const balance = account.current_balance || account.initial_balance || 0;
+        // Simplified balance to use initial_balance as current_balance is not directly stored
+        const balance = account.initial_balance || 0;
         const currency = account.currency || 'BRL';
 
         return (
@@ -159,6 +161,10 @@ export default function AccountsGrid({ accounts, isLoading, onEditAccount }) {
                         <Edit className="w-4 h-4 mr-2" />
                         Editar
                       </DropdownMenuItem>
+                      <DropdownMenuItem onClick={() => onDeleteAccount(account.id)} className="text-red-600 hover:!text-red-600 hover:!bg-red-50">
+                        <Trash2 className="w-4 h-4 mr-2" />
+                        Excluir
+                      </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </div>
@@ -170,7 +176,8 @@ export default function AccountsGrid({ accounts, isLoading, onEditAccount }) {
                     <p className={`text-3xl font-bold ${balance < 0 ? 'text-red-600' : 'text-gray-900'}`}>
                       {formatCurrency(balance, currency)}
                     </p>
-                    <p className="text-gray-600 text-sm">Saldo atual</p>
+                    {/* Changed "Saldo atual" to "Saldo Inicial" for clarity */}
+                    <p className="text-gray-600 text-sm">Saldo Inicial</p>
                   </div>
 
                   {account.bank && (

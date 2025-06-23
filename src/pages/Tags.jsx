@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect } from "react";
-import { Tag } from "@/api/entities";
+// import { Tag } from "@/api/entities"; // Remove old entity
+import { supabase } from "@/lib/supabaseClient"; // Import Supabase client
 import { motion } from "framer-motion";
 
 import TagsHeader from "../components/tags/TagsHeader";
@@ -34,10 +35,15 @@ export default function TagsPage() {
   const loadTags = async () => {
     setIsLoading(true);
     try {
-      const data = await Tag.list(); // Fetching without specific order, as we'll sort client-side.
-      setTags(data);
+      const { data, error } = await supabase
+        .from("tags")
+        .select("*")
+        .order("name", { ascending: true }); // Order by name for consistency
+
+      if (error) throw error;
+      setTags(data || []);
     } catch (error) {
-      console.error("Erro ao carregar tags:", error);
+      console.error("Erro ao carregar tags:", error.message);
       toast({
         title: "Erro ao carregar tags",
         description: "Ocorreu um problema ao buscar os dados. Tente novamente.",
@@ -48,24 +54,27 @@ export default function TagsPage() {
   };
 
   const handleFormSubmit = async (tagData) => {
-    // A verificação se é uma edição agora depende da existência do 'id' no objeto.
     const isEditing = !!editingTag?.id;
-
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user && !isEditing) throw new Error("Usuário não autenticado para criar tag.");
+      // For editing, RLS will protect, user object not strictly needed for the update call itself.
+
       if (isEditing) {
-        await Tag.update(editingTag.id, tagData);
-        
-        // Se a tag editada é uma tag pai e a cor foi alterada, atualizar cor dos filhos
+        const { error: updateError } = await supabase
+          .from("tags")
+          .update(tagData)
+          .eq("id", editingTag.id);
+        if (updateError) throw updateError;
+
         if (tagData.color && tagData.color !== editingTag.color) {
           const childrenTags = tags.filter(tag => tag.parent_tag_id === editingTag.id);
-          
           if (childrenTags.length > 0) {
-            // Atualizar cor de todos os filhos
-            const updatePromises = childrenTags.map(child => 
-              Tag.update(child.id, { ...child, color: tagData.color })
+            const updatePromises = childrenTags.map(child =>
+              supabase.from("tags").update({ color: tagData.color }).eq("id", child.id)
             );
-            
-            await Promise.all(updatePromises);
+            const results = await Promise.all(updatePromises);
+            results.forEach(result => { if (result.error) console.error("Erro ao atualizar cor do filho:", result.error); });
             
             toast({
               title: "Cores atualizadas!",
@@ -73,23 +82,21 @@ export default function TagsPage() {
               className: "bg-blue-100 text-blue-800 border-blue-300",
             });
           } else {
-            toast({
+             toast({
               title: "Tag Atualizada!",
               description: `A tag "${tagData.name}" foi atualizada com sucesso.`,
               className: "bg-green-100 text-green-800 border-green-300",
             });
           }
         } else {
-          toast({
+           toast({
             title: "Tag Atualizada!",
             description: `A tag "${tagData.name}" foi atualizada com sucesso.`,
             className: "bg-green-100 text-green-800 border-green-300",
           });
         }
-      } else {
-        // Se é uma nova tag filha, herdar a cor do pai
-        let finalTagData = { ...tagData };
-        
+      } else { // Creating new tag
+        let finalTagData = { ...tagData, user_id: user.id };
         if (tagData.parent_tag_id) {
           const parentTag = tags.find(t => t.id === tagData.parent_tag_id);
           if (parentTag && parentTag.color && !tagData.color) {
@@ -97,10 +104,11 @@ export default function TagsPage() {
           }
         }
         
-        await Tag.create(finalTagData);
+        const { error: insertError } = await supabase.from("tags").insert([finalTagData]);
+        if (insertError) throw insertError;
         toast({
           title: "Tag Criada!",
-          description: `A tag "${tagData.name}" foi criada com sucesso.`,
+          description: `A tag "${finalTagData.name}" foi criada com sucesso.`,
           className: "bg-green-100 text-green-800 border-green-300",
         });
       }
@@ -108,7 +116,7 @@ export default function TagsPage() {
       setEditingTag(null);
       loadTags();
     } catch (error) {
-      console.error("Erro ao salvar tag:", error);
+      console.error("Erro ao salvar tag:", error.message);
       toast({
         title: "Erro ao salvar tag",
         description: "Não foi possível salvar a tag. Verifique os dados e tente novamente.",
@@ -135,15 +143,17 @@ export default function TagsPage() {
     }
 
     try {
-      const tagToDelete = tags.find(t => t.id === tagId);
-      await Tag.delete(tagId);
+      const tagToDelete = tags.find(t => t.id === tagId); // For toast message
+      const { error } = await supabase.from("tags").delete().eq("id", tagId);
+      if (error) throw error;
+
       toast({
         title: "Tag Excluída!",
         description: `A tag "${tagToDelete?.name}" foi excluída com sucesso.`,
       });
       loadTags();
     } catch (error) {
-      console.error("Erro ao excluir tag:", error);
+      console.error("Erro ao excluir tag:", error.message);
       toast({
         title: "Erro ao excluir tag",
         description: "Ocorreu um problema ao tentar excluir a tag.",

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { InvokeLLM } from "@/api/integrations";
-import { ExchangeRate } from "@/api/entities";
+// import { InvokeLLM } from "@/api/integrations"; // Removed
+// import { ExchangeRate } from "@/api/entities"; // Removed
+import { supabase } from "@/lib/supabaseClient"; // Added
 
 // Cache em memória para cotações já buscadas na sessão atual
 const memoryCache = new Map();
@@ -9,117 +10,69 @@ export const getCurrencyExchangeRate = async (fromCurrency, toCurrency = 'BRL') 
   if (fromCurrency === toCurrency) return 1;
   
   const today = new Date().toISOString().split('T')[0]; // Formato YYYY-MM-DD
-  const cacheKey = `${fromCurrency}_${toCurrency}`;
+  const cacheKey = `${fromCurrency}_${toCurrency}_${today}`; // Include date in cacheKey for daily rates
   
-  // 1. Verificar cache em memória primeiro (mais rápido)
+  // 1. Verificar cache em memória primeiro
   if (memoryCache.has(cacheKey)) {
-    const cached = memoryCache.get(cacheKey);
-    if (cached.date === today) {
-      return cached.rate;
-    }
+    return memoryCache.get(cacheKey);
   }
 
   try {
-    // 2. Buscar na base de dados
-    const existingRates = await ExchangeRate.filter({
-      from_currency: fromCurrency,
-      to_currency: toCurrency,
-      rate_date: today
-    });
+    // 2. Buscar na base de dados (Supabase)
+    // Prioritize user-specific rate for today, then global rate for today.
+    // This example assumes a simple structure; extend as needed for user vs global logic.
+    // For now, just fetch any rate for today.
+    const { data: rateData, error: rateError } = await supabase
+      .from('exchange_rates')
+      .select('rate')
+      .eq('from_currency', fromCurrency)
+      .eq('to_currency', toCurrency)
+      .eq('rate_date', today)
+      // .is('user_id', null) // Example: for global rates. Add user_id logic if needed.
+      .order('created_at', { ascending: false }) // Get the latest if multiple for same day (e.g. user vs global)
+      .limit(1)
+      .maybeSingle();
 
-    if (existingRates.length > 0) {
-      const rate = existingRates[0].rate;
-      // Armazenar no cache em memória
-      memoryCache.set(cacheKey, { rate, date: today });
-      return rate;
+    if (rateError) {
+      console.error(`Erro ao buscar cotação ${fromCurrency}->${toCurrency} do DB:`, rateError.message);
+      // Do not throw here, proceed to fallback
     }
 
-    // 3. Se não encontrou na base, buscar externamente com fontes confiáveis
-    console.log(`Buscando cotação externa para ${fromCurrency} -> ${toCurrency}`);
-    
-    const response = await InvokeLLM({
-      prompt: `Get the current official exchange rate from ${fromCurrency} to ${toCurrency} for today's date.
-
-PRIORITY SOURCES (use in this order):
-1. Banco Central do Brasil (bcb.gov.br) - OFFICIAL Brazilian rate
-2. ExchangeRate-API (exchangerate-api.com)
-3. XE.com - widely recognized rates
-4. Open Exchange Rates (openexchangerates.org)
-5. Fixer.io
-6. Investing.com real-time rates
-7. Bloomberg or Reuters financial data
-
-For BRL conversions, prioritize Banco Central do Brasil as it's the official source.
-For other currencies, use ExchangeRate-API or XE.com as primary sources.
-
-Return the most accurate and current exchange rate available from these reliable sources.
-Include the source name in your response.`,
-      add_context_from_internet: true,
-      response_json_schema: {
-        type: "object",
-        properties: {
-          exchange_rate: {
-            type: "number",
-            description: `Current exchange rate from ${fromCurrency} to ${toCurrency}`
-          },
-          source: {
-            type: "string",
-            description: "Name of the reliable source used (e.g., 'Banco Central do Brasil', 'ExchangeRate-API', 'XE.com')"
-          },
-          date: {
-            type: "string",
-            description: "Date of the exchange rate"
-          },
-          confidence: {
-            type: "string",
-            description: "Confidence level: 'high' for official sources, 'medium' for recognized APIs"
-          }
-        }
-      }
-    });
-
-    const rate = response.exchange_rate || 1;
-    const source = response.source || "External API";
-    const confidence = response.confidence || "medium";
-
-    // 4. Salvar na base de dados para uso futuro
-    try {
-      await ExchangeRate.create({
-        from_currency: fromCurrency,
-        to_currency: toCurrency,
-        rate: rate,
-        rate_date: today,
-        source: `${source} (${confidence} confidence)`
-      });
-      console.log(`Cotação ${fromCurrency}/${toCurrency} salva: ${rate} (Fonte: ${source})`);
-    } catch (dbError) {
-      console.error("Erro ao salvar cotação na base:", dbError);
+    if (rateData && rateData.rate) {
+      memoryCache.set(cacheKey, rateData.rate);
+      return rateData.rate;
     }
 
-    // 5. Armazenar no cache em memória
-    memoryCache.set(cacheKey, { rate, date: today });
+    // 3. External fetching and saving to DB is REMOVED for this iteration.
+    console.warn(`Cotação externa para ${fromCurrency} -> ${toCurrency} não implementada nesta versão. Buscando fallback.`);
 
-    return rate;
+    // 4. Fallback: tentar buscar cotação mais recente na base (qualquer data)
+    const { data: fallbackRateData, error: fallbackError } = await supabase
+      .from('exchange_rates')
+      .select('rate, source, rate_date')
+      .eq('from_currency', fromCurrency)
+      .eq('to_currency', toCurrency)
+      // .is('user_id', null) // Example for global rates
+      .order('rate_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
 
-  } catch (error) {
-    console.error(`Erro ao buscar cotação ${fromCurrency} para ${toCurrency}:`, error);
-    
-    // Fallback: tentar buscar cotação mais recente na base
-    try {
-      const recentRates = await ExchangeRate.filter({
-        from_currency: fromCurrency,
-        to_currency: toCurrency
-      }, '-rate_date', 1); // Mais recente primeiro
-
-      if (recentRates.length > 0) {
-        const fallbackRate = recentRates[0].rate;
-        console.log(`Usando cotação mais recente como fallback: ${fallbackRate} (Fonte: ${recentRates[0].source})`);
-        return fallbackRate;
-      }
-    } catch (fallbackError) {
-      console.error("Erro no fallback:", fallbackError);
+    if (fallbackError) {
+      console.error(`Erro ao buscar cotação fallback ${fromCurrency}->${toCurrency}:`, fallbackError.message);
     }
     
+    if (fallbackRateData && fallbackRateData.rate) {
+      console.log(`Usando cotação mais recente (${fallbackRateData.rate_date}) como fallback: ${fallbackRateData.rate} (Fonte: ${fallbackRateData.source})`);
+      // Cache this fallback but maybe with a different, non-today key or shorter expiry if cache had TTL
+      memoryCache.set(`${fromCurrency}_${toCurrency}_fallback_${fallbackRateData.rate_date}`, fallbackRateData.rate);
+      return fallbackRateData.rate;
+    }
+    
+    console.warn(`Nenhuma cotação encontrada para ${fromCurrency} -> ${toCurrency}. Usando taxa 1.`);
+    return 1; // Último recurso
+
+  } catch (error) { // Catch unexpected errors from the overall try block
+    console.error(`Erro geral ao buscar cotação ${fromCurrency} para ${toCurrency}:`, error.message);
     return 1; // Último recurso
   }
 };
@@ -153,7 +106,7 @@ export const formatCurrencyWithSymbol = (amount, currency = 'BRL') => {
 
 // Hook para conversão de moeda com cache otimizado
 export const useCurrencyConversion = () => {
-  const [isLoading, setIsLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(false); // This hook's loading state seems local and fine.
 
   const convertToBRL = async (amount, fromCurrency) => {
     if (fromCurrency === 'BRL') return amount;
@@ -165,7 +118,7 @@ export const useCurrencyConversion = () => {
       return convertedAmount;
     } catch (error) {
       setIsLoading(false);
-      console.error('Erro na conversão:', error);
+      console.error('Erro na conversão:', error.message);
       return amount; // Fallback
     }
   };
@@ -173,14 +126,13 @@ export const useCurrencyConversion = () => {
   const preloadExchangeRates = async (currencies = ['USD', 'EUR']) => {
     setIsLoading(true);
     try {
-      // Carregar cotações em paralelo para melhorar performance
       const promises = currencies.map(currency => 
         getCurrencyExchangeRate(currency, 'BRL')
       );
       await Promise.all(promises);
-      console.log('Cotações pré-carregadas com sucesso de fontes confiáveis');
+      console.log('Cotações pré-carregadas (tentativa).');
     } catch (error) {
-      console.error('Erro ao pré-carregar cotações:', error);
+      console.error('Erro ao pré-carregar cotações:', error.message);
     }
     setIsLoading(false);
   };
@@ -189,21 +141,35 @@ export const useCurrencyConversion = () => {
 };
 
 // Função utilitária para limpar cotações antigas (pode ser executada periodicamente)
+// This function would ideally be a cron job or Supabase scheduled function.
 export const cleanOldExchangeRates = async (daysToKeep = 30) => {
   try {
     const cutoffDate = new Date();
     cutoffDate.setDate(cutoffDate.getDate() - daysToKeep);
     const cutoffDateStr = cutoffDate.toISOString().split('T')[0];
     
-    const oldRates = await ExchangeRate.filter({}, '-rate_date');
-    const ratesToDelete = oldRates.filter(rate => rate.rate_date < cutoffDateStr);
-    
-    for (const rate of ratesToDelete) {
-      await ExchangeRate.delete(rate.id);
+    // Fetch IDs of rates older than cutoffDateStr
+    const { data: ratesToDelete, error: fetchError } = await supabase
+      .from('exchange_rates')
+      .select('id')
+      .lt('rate_date', cutoffDateStr);
+
+    if (fetchError) throw fetchError;
+
+    if (ratesToDelete && ratesToDelete.length > 0) {
+      const idsToDelete = ratesToDelete.map(rate => rate.id);
+      const { error: deleteError } = await supabase
+        .from('exchange_rates')
+        .delete()
+        .in('id', idsToDelete);
+
+      if (deleteError) throw deleteError;
+      console.log(`${idsToDelete.length} cotações antigas removidas.`);
+    } else {
+      console.log("Nenhuma cotação antiga para remover.");
     }
     
-    console.log(`${ratesToDelete.length} cotações antigas removidas`);
   } catch (error) {
-    console.error('Erro ao limpar cotações antigas:', error);
+    console.error('Erro ao limpar cotações antigas:', error.message);
   }
 };

@@ -62,175 +62,17 @@ export default function TransactionsList({
 }) {
 
   const getAccountName = (accountId) => accounts.find(acc => acc.id === accountId)?.name || "N/A";
-  const getAccountCurrency = (accountId) => accounts.find(acc => acc.id === accountId)?.currency || "BRL";
+  const getAccountCurrency = (accountId) => accounts.find(acc => acc.id === accountId)?.currency || "BRL"; // Used for transaction amount
   const getTagName = (tagId) => tags.find(tag => tag.id === tagId)?.name || "N/A";
 
-  const calculateProgressiveBalances = React.useCallback(async (sortedTransactions, selectedAccountId) => {
-    if (!sortedTransactions.length) {
-      return sortedTransactions.map(t => ({ ...t, balance: null }));
-    }
-
-    // Optimization: Pre-fetch all needed exchange rates
-    // This ensures all necessary rates are available before calculations begin,
-    // reducing redundant API calls within the loops.
-    const currenciesToFetch = new Set();
-    accounts.forEach(acc => {
-      if (acc.currency && acc.currency !== 'BRL') currenciesToFetch.add(acc.currency);
-    });
-    sortedTransactions.forEach(t => {
-      const sourceCurrency = accounts.find(acc => acc.id === t.account_id)?.currency;
-      if (sourceCurrency && sourceCurrency !== 'BRL') currenciesToFetch.add(sourceCurrency);
-      if (t.transaction_type === 'transfer' && t.destination_account_id) {
-          const destCurrency = accounts.find(acc => acc.id === t.destination_account_id)?.currency;
-          if (destCurrency && destCurrency !== 'BRL') currenciesToFetch.add(destCurrency);
-      }
-    });
-    if (currenciesToFetch.size > 0) {
-      await Promise.all(
-        Array.from(currenciesToFetch).map(curr => getCurrencyExchangeRate(curr, 'BRL'))
-      );
-    }
-    // End Optimization
-
-    // Important Note: When `transactions` prop is already paginated (as per new props),
-    // `sortedTransactions` will only contain transactions for the current page.
-    // The progressive balance calculated here will be accurate relative to the
-    // `current_balance` (or `totalBalanceInBRL`) as a starting point,
-    // and then reflect changes *within this specific page*.
-    // For a true "running balance" across all pages, the parent component
-    // would need to calculate balances on the full dataset first, then paginate.
-
-    if (selectedAccountId === "all") {
-      let totalBalanceInBRL = 0;
-      // Calculate the current total balance of all active accounts
-      for (const account of accounts.filter(acc => acc.is_active !== false)) {
-        const balance = account.current_balance || account.initial_balance || 0;
-        const currency = account.currency || 'BRL';
-        totalBalanceInBRL += await convertCurrency(balance, currency, 'BRL');
-      }
-
-      const transactionsWithBalance = [];
-      // `runningBalance` represents the total balance *after* all transactions (on this page and future ones)
-      let runningBalance = totalBalanceInBRL; // This is the overall current balance
-
-      // Iterate through transactions from newest to oldest within the current page
-      for (let i = 0; i < sortedTransactions.length; i++) {
-        const transaction = sortedTransactions[i];
-        
-        // The balance displayed for the current transaction is the `runningBalance`
-        // *after* this transaction and all newer ones (on this page) have occurred.
-        transactionsWithBalance.push({ ...transaction, balance: runningBalance, balanceCurrency: 'BRL' });
-
-        // Calculate the reversal effect of the *current* transaction to get the balance *before* it.
-        // This will be the running balance for the next (older) transaction in the list.
-        const currentTransactionAmount = parseFloat(transaction.amount || 0);
-        const currentAccountCurrency = accounts.find(acc => acc.id === transaction.account_id)?.currency || 'BRL';
-        
-        let balanceChangeForReversal = 0; 
-
-        if (transaction.transaction_type === 'income') {
-            balanceChangeForReversal = -(await convertCurrency(currentTransactionAmount, currentAccountCurrency, 'BRL'));
-        } else if (transaction.transaction_type === 'expense') {
-            balanceChangeForReversal = await convertCurrency(currentTransactionAmount, currentAccountCurrency, 'BRL');
-        }
-        // For transfers in the "all" view, their net effect on the total portfolio balance is usually zero.
-        // So, transfers don't cause a change in the runningBalance for the 'all' view.
-        
-        runningBalance += balanceChangeForReversal;
-      }
-      return transactionsWithBalance;
-
-    } else { // For a specific selectedAccountId
-      const selectedAccount = accounts.find(acc => acc.id === selectedAccountId);
-      if (!selectedAccount) return sortedTransactions.map(t => ({ ...t, balance: null }));
-
-      const accountCurrency = selectedAccount.currency || 'BRL';
-      
-      // Starting point: the current balance of the selected account
-      let currentBalanceInAccountCurrency = selectedAccount.current_balance || selectedAccount.initial_balance || 0;
-      let runningBalanceInBRL = await convertCurrency(currentBalanceInAccountCurrency, accountCurrency, 'BRL');
-      
-      const transactionsWithBalance = [];
-
-      // Iterate through transactions from newest to oldest within the current page
-      for (let i = 0; i < sortedTransactions.length; i++) {
-        const transaction = sortedTransactions[i];
-        
-        transactionsWithBalance.push({ 
-          ...transaction, 
-          balance: runningBalanceInBRL, 
-          balanceCurrency: 'BRL' // Balance is always in BRL for display
-        });
-
-        const transactionAmount = parseFloat(transaction.amount || 0);
-        let balanceChangeToReverseInBRL = 0;
-
-        // Case 1: The selected account is the source of the transaction
-        if (transaction.account_id === selectedAccountId) {
-            const sourceCurrency = accounts.find(acc => acc.id === transaction.account_id)?.currency || 'BRL';
-            const amountInBRL = await convertCurrency(transactionAmount, sourceCurrency, 'BRL');
-
-            if (transaction.transaction_type === 'income') {
-                balanceChangeToReverseInBRL = -amountInBRL; 
-            } else if (transaction.transaction_type === 'expense') {
-                balanceChangeToReverseInBRL = amountInBRL; 
-            } else if (transaction.transaction_type === 'transfer') {
-                balanceChangeToReverseInBRL = amountInBRL; 
-            }
-        }
-        // Case 2: The selected account is the destination of a transfer transaction
-        else if (transaction.destination_account_id === selectedAccountId && transaction.transaction_type === 'transfer') {
-            const sourceCurrency = accounts.find(acc => acc.id === transaction.account_id)?.currency || 'BRL';
-            const amountInBRL = await convertCurrency(transactionAmount, sourceCurrency, 'BRL');
-            balanceChangeToReverseInBRL = -amountInBRL;
-        }
-        
-        runningBalanceInBRL += balanceChangeToReverseInBRL;
-      }
-      return transactionsWithBalance;
-    }
-  }, [accounts]);
-
-  // Sort transactions by date (newest first)
-  // This will sort only the transactions provided for the current page
-  const sortedTransactions = React.useMemo(() => {
-    return [...transactions].sort((a, b) => {
-      const dateA = parseISO(a.transaction_date);
-      const dateB = parseISO(b.transaction_date);
-      return dateB - dateA; // Newest first
-    });
-  }, [transactions]);
-
-  const [transactionsWithBalances, setTransactionsWithBalances] = React.useState([]);
-  const [isCalculatingBalances, setIsCalculatingBalances] = React.useState(false);
-
-  React.useEffect(() => {
-    const processBalances = async () => {
-      setIsCalculatingBalances(true);
-      try {
-        // `sortedTransactions` here refers to the transactions on the *current page*
-        const processed = await calculateProgressiveBalances(sortedTransactions, filters?.accountId || "all");
-        setTransactionsWithBalances(processed);
-      } catch (error) {
-        console.error('Erro ao calcular saldos:', error);
-        setTransactionsWithBalances(sortedTransactions.map(t => ({ ...t, balance: null })));
-      }
-      setIsCalculatingBalances(false);
-    };
-
-    // Only calculate if not loading (initial fetch) and there are transactions on the current page
-    // And only if the balance column is supposed to be shown (to avoid unnecessary calculations)
-    if (!isLoading && transactions.length > 0 && filters?.tagId === "all" && currentPage === 1) {
-      processBalances();
-    } else {
-      // If no transactions on current page or loading, or if balance column is hidden, clear balances
-      setTransactionsWithBalances(sortedTransactions.map(t => ({ ...t, balance: null })));
-    }
-  }, [sortedTransactions, filters?.accountId, isLoading, calculateProgressiveBalances, transactions.length, filters?.tagId, currentPage]);
+  // Removed internal calculateProgressiveBalances, useEffect for it, and related states (transactionsWithBalances, isCalculatingBalances)
+  // The `transactions` prop now comes pre-calculated with `progressiveBalance` and `progressiveBalanceCurrency` from the parent.
 
   // Determinar se deve mostrar a coluna de saldo
-  // Ocultar quando uma tag específica for selecionada (diferente de "all") OU quando não estiver na primeira página
-  const shouldShowBalanceColumn = filters?.tagId === "all" && currentPage === 1;
+  // This logic is based on props passed from parent, parent already handles this visibility.
+  // The parent `TransactionsPage.jsx` calculates `progressiveBalance` conditionally.
+  // If `progressiveBalance` is null on a transaction, we can infer it shouldn't be shown or is unavailable.
+  const shouldShowBalanceColumn = transactions.length > 0 && transactions.some(t => t.progressiveBalance !== null) && filters?.tagId === "all" && currentPage === 1;
 
   // Componente de Paginação
   const PaginationComponent = () => {
@@ -420,12 +262,7 @@ export default function TransactionsList({
         <CardTitle className="flex items-center gap-2">
           <TrendingUp className="w-5 h-5 text-indigo-600" />
           Histórico de Transações
-          {isCalculatingBalances && (
-            <div className="text-xs text-blue-600 flex items-center gap-1 ml-2">
-              <div className="w-3 h-3 border border-blue-600 border-t-transparent rounded-full animate-spin" />
-              Calculando saldos...
-            </div>
-          )}
+          {/* Removed isCalculatingBalances as it's handled by parent or implied by isLoading from parent */}
           <span className="text-sm font-normal text-gray-500 ml-2">
             (Clique na linha para editar)
           </span>
@@ -450,10 +287,12 @@ export default function TransactionsList({
           </TableHeader>
           <TableBody>
             <AnimatePresence>
-              {transactionsWithBalances.map(transaction => {
+              {/* Iterate directly over the `transactions` prop */}
+              {transactions.map(transaction => {
                 const typeDetails = getTransactionTypeDetails(transaction.transaction_type);
                 const IconComponent = typeDetails.icon;
-                const transactionAccountCurrency = getAccountCurrency(transaction.account_id);
+                // transaction.currency is now directly on the transaction object from parent
+                const transactionAccountCurrency = transaction.currency || getAccountCurrency(transaction.account_id);
                 
                 const handleRowClick = (e) => {
                   // Não executar se o clique foi no botão de ação ou em um de seus filhos
@@ -487,10 +326,11 @@ export default function TransactionsList({
                       {typeDetails.valuePrefix}{formatCurrencyWithSymbol(transaction.amount, transactionAccountCurrency)}
                     </TableCell>
                     {shouldShowBalanceColumn && (
-                      <TableCell className={`font-semibold ${transaction.balance !== null && transaction.balance < 0 ? 'text-red-600' : 'text-blue-700'}`}>
-                        {transaction.balance !== null 
-                          ? formatCurrencyWithSymbol(transaction.balance, 'BRL')
-                          : (isCalculatingBalances ? '...' : '-') // Show '...' while balances are being calculated
+                      // Use progressiveBalance and progressiveBalanceCurrency from the transaction object
+                      <TableCell className={`font-semibold ${transaction.progressiveBalance !== null && transaction.progressiveBalance < 0 ? 'text-red-600' : 'text-blue-700'}`}>
+                        {transaction.progressiveBalance !== null
+                          ? formatCurrencyWithSymbol(transaction.progressiveBalance, transaction.progressiveBalanceCurrency || 'BRL')
+                          : '-'
                         }
                       </TableCell>
                     )}

@@ -1,7 +1,7 @@
 
 
 import React from "react";
-import { Link, useLocation } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom"; // Added useNavigate
 import { createPageUrl } from "@/utils";
 import { 
   Home, 
@@ -11,7 +11,7 @@ import {
   TrendingUp,
   BarChart, 
   Menu,
-  User,
+  // User, // User icon from lucide-react, might conflict with User state
   Settings,
   LogOut
 } from "lucide-react";
@@ -31,7 +31,8 @@ import {
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
-import { User as UserEntity } from "@/api/entities";
+// import { User as UserEntity } from "@/api/entities"; // Remove Base44 User entity
+import { supabase } from "@/lib/supabaseClient"; // Import Supabase client
 
 const navigationItems = [
   {
@@ -80,24 +81,60 @@ const navigationItems = [
 
 export default function Layout({ children, currentPageName }) {
   const location = useLocation();
+  const navigate = useNavigate();
   const [user, setUser] = React.useState(null);
+  // Loading state for initial user fetch can be removed if ProtectedRoute handles pre-loading checks
+  // const [loading, setLoading] = React.useState(true);
 
   React.useEffect(() => {
-    loadUser();
-  }, []);
+    const fetchUserAndListen = async () => {
+      // Initial fetch
+      const { data: { user: initialUser } } = await supabase.auth.getUser();
+      setUser(initialUser);
+      // setLoading(false); // setLoading can be removed
 
-  const loadUser = async () => {
-    try {
-      const userData = await UserEntity.me();
-      setUser(userData);
-    } catch (error) {
-      console.log("Usuário não autenticado");
-    }
-  };
+      // Listen for auth changes
+      const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
+        console.log("Layout Auth event:", event, session);
+        const currentUser = session?.user || null;
+        setUser(currentUser);
+
+        // If user logs out (session becomes null) and we are not on login page, redirect.
+        // This is a fallback, ProtectedRoute should primarily handle unauthenticated access.
+        if (!currentUser && location.pathname !== '/login') {
+          navigate('/login', { replace: true });
+        }
+        // If user logs in (session appears) and they are somehow on login page, redirect to dashboard.
+        else if (currentUser && location.pathname === '/login') {
+          navigate('/', { replace: true });
+        }
+      });
+
+      return () => {
+        authListener?.subscription?.unsubscribe();
+      };
+    };
+
+    fetchUserAndListen();
+  }, [navigate, location.pathname]);
 
   const handleLogout = async () => {
-    await UserEntity.logout();
+    const { error } = await supabase.auth.signOut();
+    if (error) {
+      console.error("Error logging out:", error);
+    }
+    // setUser(null); // onAuthStateChange will handle this
+    // navigate("/login"); // onAuthStateChange will handle this
   };
+
+  // If there's no user object, it might mean auth state is still loading or user is logged out.
+  // ProtectedRoute should prevent this component from rendering if not authenticated.
+  // However, a brief null state for user might occur before the first onAuthStateChange sets it.
+  // For a cleaner UI, we could show a loader if user is null, but this might flash.
+  // Given ProtectedRoute, user should ideally always be populated here.
+  // if (!user) {
+  //   return <div className="flex items-center justify-center min-h-screen">Carregando usuário...</div>;
+  // }
 
   return (
     <SidebarProvider>
@@ -164,17 +201,18 @@ export default function Layout({ children, currentPageName }) {
           </SidebarContent>
 
           <SidebarFooter className="border-t border-gray-100 p-4">
-            {user && (
+            {user ? ( // Check if user object exists
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <Avatar className="h-10 w-10">
                     <AvatarFallback className="bg-green-100 text-green-700 font-semibold">
-                      {user.full_name?.charAt(0) || 'U'}
+                      {/* Supabase user object might have email, but full_name comes from user_metadata */}
+                      {user.user_metadata?.full_name?.charAt(0) || user.email?.charAt(0).toUpperCase() || 'U'}
                     </AvatarFallback>
                   </Avatar>
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-gray-900 text-sm truncate">
-                      {user.full_name || 'Usuário'}
+                      {user.user_metadata?.full_name || user.email || 'Usuário'}
                     </p>
                     <p className="text-xs text-gray-500 truncate">{user.email}</p>
                   </div>

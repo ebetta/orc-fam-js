@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect, useCallback } from "react";
-import { Transaction } from "@/api/entities";
-import { Account } from "@/api/entities";
-import { Tag } from "@/api/entities";
+// import { Transaction } from "@/api/entities"; // Removed
+// import { Account } from "@/api/entities"; // Removed
+// import { Tag } from "@/api/entities"; // Removed
+import { supabase } from "@/lib/supabaseClient"; // Added
 import { motion } from "framer-motion";
 import { useToast } from "@/components/ui/use-toast";
 
@@ -57,17 +58,30 @@ export default function TransactionsPage() {
   const loadInitialData = useCallback(async () => {
     setIsLoading(true);
     try {
-      // Fetch transactions in descending order by date for general display
-      const [transactionsData, accountsData, tagsData] = await Promise.all([
-        Transaction.list("-transaction_date"), 
-        Account.list(),
-        Tag.list(),
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        // Should not happen if ProtectedRoute is working, but good for safety
+        toast({ title: "Usuário não autenticado.", variant: "destructive" });
+        setIsLoading(false);
+        return;
+      }
+
+      const [transactionsResponse, accountsResponse, tagsResponse] = await Promise.all([
+        supabase.from('transactions').select('*').order('transaction_date', { ascending: false }),
+        supabase.from('accounts').select('*'),
+        supabase.from('tags').select('*')
       ]);
-      setTransactions(transactionsData);
-      setAccounts(accountsData);
-      setTags(tagsData);
+
+      if (transactionsResponse.error) throw transactionsResponse.error;
+      if (accountsResponse.error) throw accountsResponse.error;
+      if (tagsResponse.error) throw tagsResponse.error;
+
+      setTransactions(transactionsResponse.data || []);
+      setAccounts(accountsResponse.data || []);
+      setTags(tagsResponse.data || []);
+
     } catch (error) {
-      console.error("Erro ao carregar dados:", error);
+      console.error("Erro ao carregar dados:", error.message);
       toast({
         title: "Erro ao carregar dados",
         description: "Ocorreu um problema ao buscar os dados. Tente novamente.",
@@ -86,66 +100,31 @@ export default function TransactionsPage() {
     setCurrentPage(1);
   }, [filters]);
 
-  const updateAccountBalance = async (accountId, amount, operation) => {
-    try {
-      const account = await Account.get(accountId);
-      if (!account) throw new Error("Conta não encontrada");
-
-      let newBalance = parseFloat(account.current_balance || account.initial_balance || 0);
-      if (operation === "add") {
-        newBalance += parseFloat(amount);
-      } else if (operation === "subtract") {
-        newBalance -= parseFloat(amount);
-      }
-      // Ensure balance is stored with appropriate precision
-      await Account.update(accountId, { current_balance: newBalance.toFixed(2) }); 
-    } catch (error) {
-      console.error("Erro ao atualizar saldo da conta:", error);
-      toast({
-        title: "Erro ao atualizar saldo",
-        description: `Não foi possível atualizar o saldo da conta ${accountId}.`,
-        variant: "destructive",
-      });
-    }
-  };
+  // REMOVED updateAccountBalance function as current_balance is not stored in accounts table.
 
   const handleFormSubmit = async (transactionData) => {
-    // A verificação se é uma edição agora depende da existência do 'id' no objeto.
     const isEditing = !!editingTransaction?.id;
-    const originalTransaction = isEditing ? await Transaction.get(editingTransaction.id) : null;
+    // const originalTransaction = isEditing ? transactions.find(t => t.id === editingTransaction.id) : null; // Get from state if needed
 
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuário não autenticado.");
+
       if (isEditing) {
-        // Reverter saldo da transação original
-        if (originalTransaction.transaction_type === "income") {
-          await updateAccountBalance(originalTransaction.account_id, originalTransaction.amount, "subtract");
-        } else if (originalTransaction.transaction_type === "expense") {
-          await updateAccountBalance(originalTransaction.account_id, originalTransaction.amount, "add");
-        } else if (originalTransaction.transaction_type === "transfer") {
-          await updateAccountBalance(originalTransaction.account_id, originalTransaction.amount, "add"); // Devolve para origem
-          if (originalTransaction.destination_account_id) { // Ensure destination exists for transfer
-              await updateAccountBalance(originalTransaction.destination_account_id, originalTransaction.amount, "subtract"); // Retira do destino
-          }
-        }
-        
-        await Transaction.update(editingTransaction.id, transactionData);
+        // Balance adjustments are implicit due to transaction changes, no direct account update here.
+        const { error } = await supabase
+          .from("transactions")
+          .update(transactionData)
+          .eq("id", editingTransaction.id);
+        if (error) throw error;
       } else {
-        await Transaction.create(transactionData);
+        const { error } = await supabase
+          .from("transactions")
+          .insert([{ ...transactionData, user_id: user.id }]);
+        if (error) throw error;
       }
 
-      // Aplicar saldo da nova/editada transação
-      // Note: for transfers, if source_account_id or destination_account_id changed, 
-      // the prior balance adjustment might need to consider that.
-      // Current implementation re-applies based on new transactionData.
-      if (transactionData.transaction_type === "income") {
-        await updateAccountBalance(transactionData.account_id, transactionData.amount, "add");
-      } else if (transactionData.transaction_type === "expense") {
-        await updateAccountBalance(transactionData.account_id, transactionData.amount, "subtract");
-      } else if (transactionData.transaction_type === "transfer") {
-        await updateAccountBalance(transactionData.account_id, transactionData.amount, "subtract");
-        await updateAccountBalance(transactionData.destination_account_id, transactionData.amount, "add");
-      }
-
+      // Balance updates are now implicit. Reloading data will recalculate summaries.
       toast({
         title: `Transação ${isEditing ? 'Atualizada' : 'Criada'}!`,
         description: `A transação "${transactionData.description}" foi salva com sucesso.`,
@@ -172,22 +151,18 @@ export default function TransactionsPage() {
   const handleDeleteTransaction = async (transactionId) => {
     try {
       const transactionToDelete = transactions.find(t => t.id === transactionId);
-      if (!transactionToDelete) return;
-
-      await Transaction.delete(transactionId);
-
-      // Reverter saldo
-      if (transactionToDelete.transaction_type === "income") {
-        await updateAccountBalance(transactionToDelete.account_id, transactionToDelete.amount, "subtract");
-      } else if (transactionToDelete.transaction_type === "expense") {
-        await updateAccountBalance(transactionToDelete.account_id, transactionToDelete.amount, "add");
-      } else if (transactionToDelete.transaction_type === "transfer") {
-        await updateAccountBalance(transactionToDelete.account_id, transactionToDelete.amount, "add"); // Devolve para origem
-        if (transactionToDelete.destination_account_id) {
-             await updateAccountBalance(transactionToDelete.destination_account_id, transactionToDelete.amount, "subtract"); // Retira do destino
-        }
+      if (!transactionToDelete) {
+        toast({ title: "Transação não encontrada para exclusão.", variant: "destructive" });
+        return;
       }
-      
+
+      const { error } = await supabase
+        .from("transactions")
+        .delete()
+        .eq("id", transactionId);
+      if (error) throw error;
+
+      // Balance updates are now implicit. Reloading data will recalculate summaries.
       toast({
         title: "Transação Excluída!",
         description: `A transação "${transactionToDelete.description}" foi excluída.`,

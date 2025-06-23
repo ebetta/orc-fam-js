@@ -1,8 +1,9 @@
 
 import React, { useState, useEffect, useCallback } from "react";
-import { Budget } from "@/api/entities";
-import { Tag } from "@/api/entities";
-import { Transaction } from "@/api/entities";
+// import { Budget } from "@/api/entities"; // Removed
+// import { Tag } from "@/api/entities"; // Removed
+// import { Transaction } from "@/api/entities"; // Removed
+import { supabase } from "@/lib/supabaseClient"; // Added
 import { motion } from "framer-motion";
 import { useToast } from "@/components/ui/use-toast";
 import {
@@ -68,18 +69,29 @@ export default function BudgetsPage() {
   const loadInitialData = useCallback(async () => {
     setIsLoading(true);
     try {
-      const [budgetsData, tagsData, transactionsData] = await Promise.all([
-        Budget.list("-updated_date"),
-        Tag.list(),
-        Transaction.list()
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({ title: "Usuário não autenticado.", variant: "destructive" });
+        setIsLoading(false);
+        return;
+      }
+
+      const [budgetsResponse, tagsResponse, transactionsResponse] = await Promise.all([
+        supabase.from('budgets').select('*').order('updated_at', { ascending: false }),
+        supabase.from('tags').select('*'),
+        supabase.from('transactions').select('*')
       ]);
+
+      if (budgetsResponse.error) throw budgetsResponse.error;
+      if (tagsResponse.error) throw tagsResponse.error;
+      if (transactionsResponse.error) throw transactionsResponse.error;
       
-      setBudgets(budgetsData.filter(b => b.is_active !== false)); // No spent amount calculation here
-      setTags(tagsData.filter(t => t.is_active !== false && (t.tag_type === 'expense' || t.tag_type === 'both')));
-      setTransactions(transactionsData);
+      setBudgets((budgetsResponse.data || []).filter(b => b.is_active !== false));
+      setTags((tagsResponse.data || []).filter(t => t.is_active !== false && (t.tag_type === 'expense' || t.tag_type === 'both')));
+      setTransactions(transactionsResponse.data || []);
 
     } catch (error) {
-      console.error("Erro ao carregar dados de orçamentos:", error);
+      console.error("Erro ao carregar dados de orçamentos:", error.message);
       toast({
         title: "Erro ao carregar dados",
         description: "Ocorreu um problema ao buscar os dados. Tente novamente.",
@@ -234,17 +246,27 @@ export default function BudgetsPage() {
 
   const handleFormSubmit = async (budgetData) => {
     try {
-      const dataToSave = { ...budgetData };
+      const dataToSave = { ...budgetData }; // Ensure budgetData from form matches table columns
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuário não autenticado.");
 
       if (editingBudget) {
-        await Budget.update(editingBudget.id, dataToSave);
+        const { error } = await supabase
+          .from('budgets')
+          .update(dataToSave)
+          .eq('id', editingBudget.id);
+        if (error) throw error;
         toast({
           title: "Orçamento Atualizado!",
           description: `O orçamento "${budgetData.name}" foi atualizado.`,
           className: "bg-green-100 text-green-800 border-green-300",
         });
       } else {
-        await Budget.create({...dataToSave, spent_amount: 0}); // Garante que spent_amount é 0 ao criar
+        // spent_amount is not a field in the budgets table, it's calculated
+        const { error } = await supabase
+          .from('budgets')
+          .insert([{ ...dataToSave, user_id: user.id }]);
+        if (error) throw error;
         toast({
           title: "Orçamento Criado!",
           description: `O orçamento "${budgetData.name}" foi criado.`,
@@ -253,9 +275,9 @@ export default function BudgetsPage() {
       }
       setShowForm(false);
       setEditingBudget(null);
-      loadInitialData(); // Recarrega e re-calcula spent_amounts e agrupamentos
+      loadInitialData();
     } catch (error) {
-      console.error("Erro ao salvar orçamento:", error);
+      console.error("Erro ao salvar orçamento:", error.message);
       toast({
         title: "Erro ao salvar orçamento",
         description: "Não foi possível salvar. Verifique os dados e tente novamente.",
@@ -271,15 +293,19 @@ export default function BudgetsPage() {
 
   const handleDeleteBudget = async (budgetId) => {
      try {
-      const budgetToDelete = budgets.find(b => b.id === budgetId); // Encontra na lista original
-      await Budget.delete(budgetId);
+      const budgetToDelete = budgets.find(b => b.id === budgetId);
+      const { error } = await supabase
+        .from('budgets')
+        .delete()
+        .eq('id', budgetId);
+      if (error) throw error;
       toast({
         title: "Orçamento Excluído!",
         description: `O orçamento "${budgetToDelete?.name}" foi excluído.`,
       });
-      loadInitialData(); // Recarrega e re-calcula
+      loadInitialData();
     } catch (error) {
-      console.error("Erro ao excluir orçamento:", error);
+      console.error("Erro ao excluir orçamento:", error.message);
       toast({
         title: "Erro ao excluir orçamento",
         variant: "destructive",

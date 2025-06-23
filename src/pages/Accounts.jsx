@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from "react";
-import { Account } from "@/api/entities";
+// import { Account } from "@/api/entities"; // Remove old entity
+import { supabase } from "@/lib/supabaseClient"; // Import Supabase client
 import { Button } from "@/components/ui/button";
-import { Plus } from "lucide-react";
+// import { Plus } from "lucide-react"; // Plus is not directly used here
 import { motion } from "framer-motion";
 
 import AccountsHeader from "../components/accounts/AccountsHeader";
@@ -22,35 +23,72 @@ export default function Accounts() {
   const loadAccounts = async () => {
     setIsLoading(true);
     try {
-      const data = await Account.list("-updated_date");
-      setAccounts(data);
+      const { data, error } = await supabase
+        .from("accounts")
+        .select("*")
+        .order("updated_at", { ascending: false });
+
+      if (error) throw error;
+      setAccounts(data || []);
     } catch (error) {
-      console.error("Erro ao carregar contas:", error);
+      console.error("Erro ao carregar contas:", error.message);
+      // Consider setting an error state to display to the user
     }
     setIsLoading(false);
   };
 
   const handleCreateAccount = async (accountData) => {
     try {
-      await Account.create({
-        ...accountData,
-        current_balance: accountData.initial_balance
-      });
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Usuário não autenticado.");
+
+      const { error } = await supabase.from("accounts").insert([
+        { ...accountData, user_id: user.id }, // initial_balance should be part of accountData from form
+      ]);
+
+      if (error) throw error;
       setShowForm(false);
-      loadAccounts();
+      loadAccounts(); // Reload accounts to show the new one
     } catch (error) {
-      console.error("Erro ao criar conta:", error);
+      console.error("Erro ao criar conta:", error.message);
+      // Consider setting an error state to display to the user
+    }
+  };
+
+  const handleDeleteAccount = async (accountId) => {
+    // Optional: Add a confirmation dialog before deleting
+    // if (!window.confirm("Tem certeza que deseja excluir esta conta? Esta ação não pode ser desfeita.")) {
+    //   return;
+    // }
+
+    try {
+      const { error } = await supabase
+        .from("accounts")
+        .delete()
+        .eq("id", accountId);
+
+      if (error) throw error;
+      loadAccounts(); // Reload accounts to reflect the deletion
+    } catch (error) {
+      console.error("Erro ao excluir conta:", error.message);
+      // Consider setting an error state to display to the user
     }
   };
 
   const handleUpdateAccount = async (accountData) => {
     try {
-      await Account.update(editingAccount.id, accountData);
+      const { error } = await supabase
+        .from("accounts")
+        .update(accountData)
+        .eq("id", editingAccount.id);
+
+      if (error) throw error;
       setShowForm(false);
       setEditingAccount(null);
-      loadAccounts();
+      loadAccounts(); // Reload accounts to show the updated one
     } catch (error) {
-      console.error("Erro ao atualizar conta:", error);
+      console.error("Erro ao atualizar conta:", error.message);
+      // Consider setting an error state to display to the user
     }
   };
 
@@ -106,6 +144,7 @@ export default function Accounts() {
           accounts={filteredAccounts}
           isLoading={isLoading}
           onEditAccount={handleEditAccount}
+          onDeleteAccount={handleDeleteAccount} // Pass delete handler
         />
       </motion.div>
     </div>
