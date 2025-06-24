@@ -24,7 +24,7 @@ const defaultColors = [
 export default function TagForm({ tag, allTags, onSave, onCancel }) {
   const [formData, setFormData] = useState({
     name: tag?.name || "",
-    parent_tag_id: tag?.parent_tag_id || null,
+    parent_tag_id_base44: tag?.parent_tag_id_base44 || null, // Updated field name
     color: tag?.color || defaultColors[0],
     icon: tag?.icon || "",
     tag_type: tag?.tag_type || "expense",
@@ -35,7 +35,7 @@ export default function TagForm({ tag, allTags, onSave, onCancel }) {
   const [parentTagSearchValue, setParentTagSearchValue] = useState("");
 
   useEffect(() => {
-    const currentParentTagId = tag?.parent_tag_id || null;
+    const currentParentTagId = tag?.parent_tag_id_base44 || null; // Updated field name
     let initialColor = tag?.color || defaultColors[0];
     
     // Se é uma nova tag e tem pai selecionado, herdar a cor do pai
@@ -48,7 +48,7 @@ export default function TagForm({ tag, allTags, onSave, onCancel }) {
     
     setFormData({
       name: tag?.name || "",
-      parent_tag_id: currentParentTagId,
+      parent_tag_id_base44: currentParentTagId, // Updated field name
       color: initialColor,
       icon: tag?.icon || "",
       tag_type: tag?.tag_type || "expense",
@@ -67,7 +67,7 @@ export default function TagForm({ tag, allTags, onSave, onCancel }) {
     e.preventDefault();
     setIsLoading(true);
     const dataToSave = { ...formData };
-    // parent_tag_id is already null if not selected, or the tag ID.
+    // parent_tag_id_base44 is already null if not selected, or the tag ID.
     // No extra treatment needed here for 'null' string, as handleInputChange manages it.
     try {
       await onSave(dataToSave);
@@ -82,7 +82,7 @@ export default function TagForm({ tag, allTags, onSave, onCancel }) {
       const newData = { ...prev, [field]: value };
       
       // Se mudou a tag pai, herdar a cor do novo pai (apenas para novas tags)
-      if (field === 'parent_tag_id' && !tag) {
+      if (field === 'parent_tag_id_base44' && !tag) { // Updated field name
         if (value) {
           const parentTag = allTags.find(t => t.id === value);
           if (parentTag && parentTag.color) {
@@ -104,7 +104,7 @@ export default function TagForm({ tag, allTags, onSave, onCancel }) {
     .filter(t => t.name.toLowerCase().includes(parentTagSearchValue.toLowerCase()));
   
   // Find the selected parent tag object for display in the combobox button
-  const selectedParentTag = allTags.find(t => t.id === formData.parent_tag_id);
+  const selectedParentTag = allTags.find(t => t.id === formData.parent_tag_id_base44); // Updated field name
 
   return (
     <Card className="shadow-xl border-0">
@@ -170,13 +170,13 @@ export default function TagForm({ tag, allTags, onSave, onCancel }) {
                           key="no-parent-tag"
                           value="Nenhuma tag pai" // Value for CommandInput filter and onSelect
                           onSelect={() => {
-                            handleInputChange("parent_tag_id", null);
+                            handleInputChange("parent_tag_id_base44", null); // Updated field name
                             setParentTagSearchValue(""); // Clear search value
                             setParentTagPopoverOpen(false);
                           }}
                         >
                           <Check
-                            className={`mr-2 h-4 w-4 ${!formData.parent_tag_id ? "opacity-100" : "opacity-0"}`}
+                            className={`mr-2 h-4 w-4 ${!formData.parent_tag_id_base44 ? "opacity-100" : "opacity-0"}`} // Updated field name
                           />
                           Nenhuma tag pai
                         </CommandItem>
@@ -189,13 +189,13 @@ export default function TagForm({ tag, allTags, onSave, onCancel }) {
                               const actualSelectedTag = parentTagOptions.find(
                                 t => t.name.toLowerCase() === currentValue.toLowerCase()
                               );
-                              handleInputChange("parent_tag_id", actualSelectedTag ? actualSelectedTag.id : null);
+                              handleInputChange("parent_tag_id_base44", actualSelectedTag ? actualSelectedTag.id : null); // Updated field name
                               setParentTagSearchValue(actualSelectedTag ? actualSelectedTag.name : ""); // Set search value to selected tag's name
                               setParentTagPopoverOpen(false); // Close popover
                             }}
                           >
                             <Check
-                              className={`mr-2 h-4 w-4 ${formData.parent_tag_id === option.id ? "opacity-100" : "opacity-0"}`}
+                              className={`mr-2 h-4 w-4 ${formData.parent_tag_id_base44 === option.id ? "opacity-100" : "opacity-0"}`} // Updated field name
                             />
                             {option.name}
                           </CommandItem>

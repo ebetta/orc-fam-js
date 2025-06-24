@@ -27,7 +27,7 @@ export default function TagsPage() {
     // It checks if 'expandedTags' is currently empty (e.g., on initial load or if manually collapsed all)
     // and if there are tags available, it expands only the root-level tags.
     if (tags.length > 0 && expandedTags.size === 0) {
-      const rootTags = tags.filter(tag => !tag.parent_tag_id);
+      const rootTags = tags.filter(tag => !tag.parent_tag_id_base44); // Updated field name
       setExpandedTags(new Set(rootTags.map(tag => tag.id)));
     }
   }, [tags]); // Dependency array: re-run only when 'tags' changes
@@ -61,45 +61,59 @@ export default function TagsPage() {
       // For editing, RLS will protect, user object not strictly needed for the update call itself.
 
       if (isEditing) {
+        // Ensure parent_tag_id is renamed to parent_tag_id_base44 before sending to Supabase
+        const { parent_tag_id, ...restOfTagData } = tagData;
+        const dataToUpdate = {
+          ...restOfTagData,
+          parent_tag_id_base44: tagData.parent_tag_id_base44 !== undefined ? tagData.parent_tag_id_base44 : editingTag.parent_tag_id_base44,
+        };
+
         const { error: updateError } = await supabase
           .from("tags")
-          .update(tagData)
+          .update(dataToUpdate) // Use dataToUpdate
           .eq("id", editingTag.id);
         if (updateError) throw updateError;
 
-        if (tagData.color && tagData.color !== editingTag.color) {
-          const childrenTags = tags.filter(tag => tag.parent_tag_id === editingTag.id);
+        if (dataToUpdate.color && dataToUpdate.color !== editingTag.color) { // Use dataToUpdate
+          const childrenTags = tags.filter(tag => tag.parent_tag_id_base44 === editingTag.id); // Updated field name
           if (childrenTags.length > 0) {
             const updatePromises = childrenTags.map(child =>
-              supabase.from("tags").update({ color: tagData.color }).eq("id", child.id)
+              supabase.from("tags").update({ color: dataToUpdate.color }).eq("id", child.id) // Use dataToUpdate
             );
             const results = await Promise.all(updatePromises);
             results.forEach(result => { if (result.error) console.error("Erro ao atualizar cor do filho:", result.error); });
             
             toast({
               title: "Cores atualizadas!",
-              description: `A cor da tag "${tagData.name}" e suas ${childrenTags.length} tag(s) filha(s) foram atualizadas.`,
+              description: `A cor da tag "${dataToUpdate.name}" e suas ${childrenTags.length} tag(s) filha(s) foram atualizadas.`, // Use dataToUpdate
               className: "bg-blue-100 text-blue-800 border-blue-300",
             });
           } else {
              toast({
               title: "Tag Atualizada!",
-              description: `A tag "${tagData.name}" foi atualizada com sucesso.`,
+              description: `A tag "${dataToUpdate.name}" foi atualizada com sucesso.`, // Use dataToUpdate
               className: "bg-green-100 text-green-800 border-green-300",
             });
           }
         } else {
            toast({
             title: "Tag Atualizada!",
-            description: `A tag "${tagData.name}" foi atualizada com sucesso.`,
+            description: `A tag "${dataToUpdate.name}" foi atualizada com sucesso.`, // Use dataToUpdate
             className: "bg-green-100 text-green-800 border-green-300",
           });
         }
       } else { // Creating new tag
-        let finalTagData = { ...tagData, user_id: user.id };
-        if (tagData.parent_tag_id) {
-          const parentTag = tags.find(t => t.id === tagData.parent_tag_id);
-          if (parentTag && parentTag.color && !tagData.color) {
+        // Ensure parent_tag_id is renamed to parent_tag_id_base44
+        const { parent_tag_id, ...restOfTagData } = tagData;
+        let finalTagData = {
+          ...restOfTagData,
+          parent_tag_id_base44: tagData.parent_tag_id_base44, // Use the correct field from form
+          user_id: user.id
+        };
+
+        if (finalTagData.parent_tag_id_base44) { // Check renamed field
+          const parentTag = tags.find(t => t.id === finalTagData.parent_tag_id_base44); // Use renamed field
+          if (parentTag && parentTag.color && !finalTagData.color) {
             finalTagData.color = parentTag.color;
           }
         }
@@ -132,7 +146,7 @@ export default function TagsPage() {
 
   const handleDeleteTag = async (tagId) => {
     // Verificar se a tag tem filhas
-    const hasChildren = tags.some(tag => tag.parent_tag_id === tagId);
+    const hasChildren = tags.some(tag => tag.parent_tag_id_base44 === tagId); // Updated field name
     if (hasChildren) {
       toast({
         title: "Não é possível excluir",
@@ -182,7 +196,7 @@ export default function TagsPage() {
 
   const handleExpandAll = () => {
     // Expands only root-level tags as per outline
-    const rootTags = tags.filter(tag => !tag.parent_tag_id);
+    const rootTags = tags.filter(tag => !tag.parent_tag_id_base44); // Updated field name
     setExpandedTags(new Set(rootTags.map(tag => tag.id)));
   };
 
@@ -202,8 +216,8 @@ export default function TagsPage() {
     });
 
     tagsList.forEach(tag => {
-      if (tag.parent_tag_id && tagMap[tag.parent_tag_id]) {
-        tagMap[tag.parent_tag_id].children.push(tagMap[tag.id]);
+      if (tag.parent_tag_id_base44 && tagMap[tag.parent_tag_id_base44]) { // Updated field name
+        tagMap[tag.parent_tag_id_base44].children.push(tagMap[tag.id]); // Updated field name
       } else {
         tree.push(tagMap[tag.id]);
       }
