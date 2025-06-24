@@ -2,7 +2,7 @@
 import { useState, useEffect, createContext, useContext } from "react";
 
 const TOAST_LIMIT = 20;
-const TOAST_REMOVE_DELAY = 5000; // Reduzido para 5 segundos
+const TOAST_REMOVE_DELAY = 5000; // Restaurado para 5 segundos
 
 const actionTypes = {
   ADD_TOAST: "ADD_TOAST",
@@ -21,12 +21,14 @@ function genId() {
 const toastTimeouts = new Map();
 
 const addToRemoveQueue = (toastId) => {
+  // If a timeout already exists for this toastId, clear it before setting a new one.
   if (toastTimeouts.has(toastId)) {
-    return;
+    clearTimeout(toastTimeouts.get(toastId));
+    toastTimeouts.delete(toastId);
   }
 
   const timeout = setTimeout(() => {
-    toastTimeouts.delete(toastId);
+    toastTimeouts.delete(toastId); // Remove from map once timeout executes
     dispatch({
       type: actionTypes.REMOVE_TOAST,
       toastId,
@@ -128,11 +130,13 @@ function toast({ ...props }) {
       ...props,
       id,
       open: true,
-      onOpenChange: (open) => {
-        if (!open) dismiss();
-      },
+      // onOpenChange was removed here as it's passed to a div, not a Radix Toast Root
+      // The Radix ToastProvider's duration and ToastClose will handle visual closing.
+      // Our dismiss function will be used to clear the toast from our memoryState.
     },
   });
+
+  addToRemoveQueue(id); // Add toast to removal queue right after adding it to state
 
   return {
     id,
@@ -152,7 +156,7 @@ function useToast() {
         listeners.splice(index, 1);
       }
     };
-  }, [state]);
+  }, []);
 
   return {
     ...state,
