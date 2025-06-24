@@ -59,10 +59,10 @@ export default function BudgetsPage() {
   const [summaryTotals, setSummaryTotals] = useState({ orcado: 0, gasto: 0, disponivel: 0 });
 
   const calculateSpentAmountForPeriod = useCallback((budget, transactionsInPeriod) => {
-    if (!budget.tag_id) return 0;
+    if (!budget.tag_id_base44) return 0; // Changed
 
     return transactionsInPeriod
-      .filter(t => t.transaction_type === 'expense' && t.tag_id === budget.tag_id)
+      .filter(t => t.transaction_type === 'expense' && t.tag_id_base44 === budget.tag_id_base44) // Changed t.tag_id and budget.tag_id
       .reduce((sum, t) => sum + parseFloat(t.amount || 0), 0);
   }, []);
 
@@ -195,8 +195,8 @@ export default function BudgetsPage() {
       }
       
       let rootTag = currentTag;
-      while (rootTag.parent_tag_id && tagMap[rootTag.parent_tag_id]) {
-        const parent = tagMap[rootTag.parent_tag_id];
+      while (rootTag.parent_tag_id_base44 && tagMap[rootTag.parent_tag_id_base44]) { // Changed
+        const parent = tagMap[rootTag.parent_tag_id_base44]; // Changed
         if (parent.tag_type === 'income' || parent.is_active === false) break;
         rootTag = parent;
       }
@@ -206,9 +206,9 @@ export default function BudgetsPage() {
     const groups = {};
 
     budgetsWithCalculations.forEach(budget => {
-      if (!budget.tag_id) return; 
+      if (!budget.tag_id_base44) return; // Changed
 
-      const rootTag = getRootTagForBudget(budget.tag_id);
+      const rootTag = getRootTagForBudget(budget.tag_id_base44); // Changed
 
       if (!groups[rootTag.id]) {
         groups[rootTag.id] = { 
@@ -219,7 +219,7 @@ export default function BudgetsPage() {
         };
       }
       
-      const budgetTagDetails = tagMap[budget.tag_id];
+      const budgetTagDetails = tagMap[budget.tag_id_base44]; // Changed
       groups[rootTag.id].budgets.push({
         ...budget,
         tagName: budgetTagDetails?.name || 'Tag Original Desconhecida',

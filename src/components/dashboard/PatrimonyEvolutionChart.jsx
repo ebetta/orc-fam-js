@@ -79,17 +79,17 @@ export default function PatrimonyEvolutionChart({ accounts, transactions, isLoad
               // Usar .replace para tratar a data como local e evitar problemas de fuso horário
               const transactionDate = new Date(t.transaction_date.replace(/-/g, '/'));
               return transactionDate <= monthEnd && 
-                     (t.account_id === account.id || t.destination_account_id === account.id);
+                     (t.account_id_base44 === account.id || t.destination_account_id_base44 === account.id);
             });
 
             accountTransactions.forEach(t => {
               const amount = parseFloat(t.amount || 0);
-              if (t.account_id === account.id) {
+              if (t.account_id_base44 === account.id) {
                 if (t.transaction_type === 'income') accountBalanceAtMonthEnd += amount;
                 else if (t.transaction_type === 'expense') accountBalanceAtMonthEnd -= amount;
                 else if (t.transaction_type === 'transfer') accountBalanceAtMonthEnd -= amount;
               }
-              if (t.destination_account_id === account.id) {
+              if (t.destination_account_id_base44 === account.id) {
                 if (t.transaction_type === 'transfer') accountBalanceAtMonthEnd += amount;
               }
             });

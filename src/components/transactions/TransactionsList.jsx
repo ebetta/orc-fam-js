@@ -292,7 +292,7 @@ export default function TransactionsList({
                 const typeDetails = getTransactionTypeDetails(transaction.transaction_type);
                 const IconComponent = typeDetails.icon;
                 // transaction.currency is now directly on the transaction object from parent
-                const transactionAccountCurrency = transaction.currency || getAccountCurrency(transaction.account_id);
+                const transactionAccountCurrency = transaction.currency || getAccountCurrency(transaction.account_id_base44);
                 
                 const handleRowClick = (e) => {
                   // Não executar se o clique foi no botão de ação ou em um de seus filhos
@@ -336,15 +336,15 @@ export default function TransactionsList({
                     )}
                     <TableCell>
                       <div>
-                        <span className="text-sm text-gray-800 block">{getAccountName(transaction.account_id)}</span>
-                        {transaction.transaction_type === 'transfer' && transaction.destination_account_id && (
+                        <span className="text-sm text-gray-800 block">{getAccountName(transaction.account_id_base44)}</span>
+                        {transaction.transaction_type === 'transfer' && transaction.destination_account_id_base44 && (
                             <span className="text-xs text-gray-500 block">
-                                <ArrowRight className="inline w-3 h-3 mr-1" /> {getAccountName(transaction.destination_account_id)}
+                                <ArrowRight className="inline w-3 h-3 mr-1" /> {getAccountName(transaction.destination_account_id_base44)}
                             </span>
                         )}
-                        {transaction.tag_id && (
+                        {transaction.tag_id_base44 && (
                           <Badge variant="secondary" className="text-xs mt-1">
-                            {getTagName(transaction.tag_id)}
+                            {getTagName(transaction.tag_id_base44)}
                           </Badge>
                         )}
                       </div>

@@ -44,7 +44,7 @@ export default function ExpensesChart({ transactions, tags, isLoading }) {
 
       // Se não houver seleção salva ou se a leitura falhar, criar a seleção padrão (todas marcadas)
       if (!initialSelection) {
-        const parentTags = tags.filter(tag => !tag.parent_tag_id);
+        const parentTags = tags.filter(tag => !tag.parent_tag_id_base44);
         initialSelection = {};
         parentTags.forEach(tag => {
           initialSelection[tag.id] = true; // Todas selecionadas por padrão
@@ -126,7 +126,7 @@ export default function ExpensesChart({ transactions, tags, isLoading }) {
     
     // Criar mapa de tags pai
     const parentTagMap = {};
-    const parentTags = tags.filter(tag => !tag.parent_tag_id);
+    const parentTags = tags.filter(tag => !tag.parent_tag_id_base44);
     
     parentTags.forEach(parentTag => {
       parentTagMap[parentTag.id] = {
@@ -149,16 +149,16 @@ export default function ExpensesChart({ transactions, tags, isLoading }) {
 
     // Agrupar transações por tag pai
     expenseTransactions.forEach(transaction => {
-      const tagId = transaction.tag_id;
+      const tagId = transaction.tag_id_base44;
       const amount = parseFloat(transaction.amount || 0);
       
       if (tagId && tagMap[tagId]) {
         const tag = tagMap[tagId];
         let parentTagId;
         
-        if (tag.parent_tag_id) {
+        if (tag.parent_tag_id_base44) {
           // É uma tag filha, encontrar o pai
-          parentTagId = tag.parent_tag_id;
+          parentTagId = tag.parent_tag_id_base44;
         } else {
           // É uma tag pai
           parentTagId = tag.id;
@@ -209,7 +209,7 @@ export default function ExpensesChart({ transactions, tags, isLoading }) {
   const { monthName } = getPeriodDates(selectedPeriod);
 
   // Obter lista de tags pai para o filtro
-  const parentTags = tags ? tags.filter(tag => !tag.parent_tag_id).sort((a, b) => a.name.localeCompare(b.name)) : [];
+  const parentTags = tags ? tags.filter(tag => !tag.parent_tag_id_base44).sort((a, b) => a.name.localeCompare(b.name)) : [];
   const selectedCount = Object.values(selectedParentTags).filter(Boolean).length;
 
   const handleParentTagToggle = (tagId, checked) => {

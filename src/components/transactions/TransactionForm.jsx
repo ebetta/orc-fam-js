@@ -24,9 +24,9 @@ export default function TransactionForm({ transaction, accounts, tags, onSave, o
     description: transaction?.description || "",
     amount: transaction?.amount || 0,
     transaction_type: transaction?.transaction_type || "expense",
-    account_id: transaction?.account_id || "",
-    destination_account_id: transaction?.destination_account_id || null,
-    tag_id: transaction?.tag_id || null,
+    account_id_base44: transaction?.account_id_base44 || "",
+    destination_account_id_base44: transaction?.destination_account_id_base44 || null,
+    tag_id_base44: transaction?.tag_id_base44 || null,
     transaction_date: transaction?.transaction_date ? format(parseISO(transaction.transaction_date), "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd"),
     notes: transaction?.notes || ""
   });
@@ -40,16 +40,16 @@ export default function TransactionForm({ transaction, accounts, tags, onSave, o
       description: transaction?.description || "",
       amount: transaction?.amount || 0,
       transaction_type: transaction?.transaction_type || "expense",
-      account_id: transaction?.account_id || (accounts.length > 0 ? accounts[0].id : ""),
-      destination_account_id: transaction?.destination_account_id || null,
-      tag_id: transaction?.tag_id || null,
+      account_id_base44: transaction?.account_id_base44 || (accounts.length > 0 ? accounts[0].id : ""),
+      destination_account_id_base44: transaction?.destination_account_id_base44 || null,
+      tag_id_base44: transaction?.tag_id_base44 || null,
       transaction_date: transaction?.transaction_date ? format(parseISO(transaction.transaction_date), "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd"),
       notes: transaction?.notes || ""
     });
     // Se estiver editando uma transação com tag, e a tag existir na lista `tags`,
     // definir o `tagSearchValue` para o nome da tag para exibição correta no combobox.
-    if (transaction?.tag_id) {
-        const currentTag = tags.find(t => t.id === transaction.tag_id);
+    if (transaction?.tag_id_base44) {
+        const currentTag = tags.find(t => t.id === transaction.tag_id_base44);
         if (currentTag) {
             setTagSearchValue(currentTag.name);
         } else {
@@ -67,9 +67,9 @@ export default function TransactionForm({ transaction, accounts, tags, onSave, o
     const dataToSave = {
       ...formData,
       amount: parseFloat(formData.amount),
-      // Se for transferencia e nao tiver destination_account_id, ou se nao for transferencia, seta null
-      destination_account_id: formData.transaction_type === 'transfer' && formData.destination_account_id ? formData.destination_account_id : null,
-      tag_id: formData.tag_id || null
+      // Se for transferencia e nao tiver destination_account_id_base44, ou se nao for transferencia, seta null
+      destination_account_id_base44: formData.transaction_type === 'transfer' && formData.destination_account_id_base44 ? formData.destination_account_id_base44 : null,
+      tag_id_base44: formData.tag_id_base44 || null
     };
     try {
       await onSave(dataToSave);
@@ -90,15 +90,15 @@ export default function TransactionForm({ transaction, accounts, tags, onSave, o
     handleInputChange("transaction_date", format(date, "yyyy-MM-dd"));
   };
 
-  const availableDestinationAccounts = accounts.filter(acc => acc.id !== formData.account_id);
-  const selectedAccount = accounts.find(acc => acc.id === formData.account_id);
+  const availableDestinationAccounts = accounts.filter(acc => acc.id !== formData.account_id_base44);
+  const selectedAccount = accounts.find(acc => acc.id === formData.account_id_base44);
   const selectedAccountCurrency = selectedAccount?.currency || 'BRL';
 
   const filteredTags = tags.filter(tag => 
     tag.name.toLowerCase().includes(tagSearchValue.toLowerCase())
   );
   
-  const selectedTag = tags.find(t => t.id === formData.tag_id);
+  const selectedTag = tags.find(t => t.id === formData.tag_id_base44);
 
   return (
     <Card className="shadow-xl border-0 max-h-[90vh] flex flex-col">
@@ -205,12 +205,12 @@ export default function TransactionForm({ transaction, accounts, tags, onSave, o
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="account_id" className="text-sm font-medium">
+              <Label htmlFor="account_id_base44" className="text-sm font-medium">
                 Conta {formData.transaction_type === 'transfer' ? 'de Origem' : ''} *
               </Label>
               <Select
-                value={formData.account_id}
-                onValueChange={(value) => handleInputChange("account_id", value)}
+                value={formData.account_id_base44}
+                onValueChange={(value) => handleInputChange("account_id_base44", value)}
                 required
               >
                 <SelectTrigger className="h-12">
@@ -229,12 +229,12 @@ export default function TransactionForm({ transaction, accounts, tags, onSave, o
 
           {formData.transaction_type === "transfer" && (
             <div className="space-y-2">
-              <Label htmlFor="destination_account_id" className="text-sm font-medium">
+              <Label htmlFor="destination_account_id_base44" className="text-sm font-medium">
                 Conta de Destino *
               </Label>
               <Select
-                value={formData.destination_account_id || ""}
-                onValueChange={(value) => handleInputChange("destination_account_id", value)}
+                value={formData.destination_account_id_base44 || ""}
+                onValueChange={(value) => handleInputChange("destination_account_id_base44", value)}
                 required={formData.transaction_type === "transfer"}
               >
                 <SelectTrigger className="h-12">
@@ -248,7 +248,7 @@ export default function TransactionForm({ transaction, accounts, tags, onSave, o
                   ))}
                 </SelectContent>
               </Select>
-              {formData.destination_account_id && (
+              {formData.destination_account_id_base44 && (
                 <p className="text-xs text-gray-500">
                   Nota: Se as contas têm moedas diferentes, a conversão será aplicada automaticamente
                 </p>
@@ -257,7 +257,7 @@ export default function TransactionForm({ transaction, accounts, tags, onSave, o
           )}
           
           <div className="space-y-2">
-            <Label htmlFor="tag_id" className="text-sm font-medium">
+            <Label htmlFor="tag_id_base44" className="text-sm font-medium">
               Tag (Opcional)
             </Label>
             <Popover open={tagPopoverOpen} onOpenChange={setTagPopoverOpen}>
@@ -286,13 +286,13 @@ export default function TransactionForm({ transaction, accounts, tags, onSave, o
                         key="no-tag"
                         value=""
                         onSelect={() => {
-                          handleInputChange("tag_id", null);
+                          handleInputChange("tag_id_base44", null);
                           setTagSearchValue(""); // Limpa busca para exibir o placeholder
                           setTagPopoverOpen(false);
                         }}
                       >
                         <Check
-                          className={`mr-2 h-4 w-4 ${!formData.tag_id ? "opacity-100" : "opacity-0"}`}
+                          className={`mr-2 h-4 w-4 ${!formData.tag_id_base44 ? "opacity-100" : "opacity-0"}`}
                         />
                         Nenhuma tag
                       </CommandItem>
@@ -302,13 +302,13 @@ export default function TransactionForm({ transaction, accounts, tags, onSave, o
                           value={tag.name} // O valor do CommandItem é usado para a busca interna do Command
                           onSelect={(currentValue) => { // currentValue é o tag.name
                             const selected = tags.find(t => t.name.toLowerCase() === currentValue.toLowerCase());
-                            handleInputChange("tag_id", selected ? selected.id : null);
+                            handleInputChange("tag_id_base44", selected ? selected.id : null);
                             setTagSearchValue(selected ? selected.name : ""); // Atualiza texto de busca para o nome completo
                             setTagPopoverOpen(false);
                           }}
                         >
                           <Check
-                            className={`mr-2 h-4 w-4 ${formData.tag_id === tag.id ? "opacity-100" : "opacity-0"}`}
+                            className={`mr-2 h-4 w-4 ${formData.tag_id_base44 === tag.id ? "opacity-100" : "opacity-0"}`}
                           />
                           {tag.name}
                         </CommandItem>

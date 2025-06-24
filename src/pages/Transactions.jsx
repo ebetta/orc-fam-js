@@ -134,10 +134,14 @@ export default function TransactionsPage() {
       setEditingTransaction(null);
       loadInitialData(); // Recarregar tudo para garantir consistência
     } catch (error) {
-      console.error("Erro ao salvar transação:", error);
+      console.error("Detailed error saving transaction:", error); // Enhanced logging
+      let description = "Não foi possível salvar. Verifique os dados e tente novamente.";
+      if (error && error.message) {
+        description += ` Detalhes: ${error.message}`;
+      }
       toast({
         title: "Erro ao salvar transação",
-        description: "Não foi possível salvar. Verifique os dados e tente novamente.",
+        description: description,
         variant: "destructive",
       });
     }
@@ -186,9 +190,9 @@ export default function TransactionsPage() {
     const typeMatch = filters.type === "all" || transaction.transaction_type === filters.type;
     // Account match includes transactions where the account is either the source or the destination of a transfer
     const accountMatch = filters.accountId === "all" || 
-                         transaction.account_id === filters.accountId || 
-                         transaction.destination_account_id === filters.accountId;
-    const tagMatch = filters.tagId === "all" || transaction.tag_id === filters.tagId;
+                         transaction.account_id_base44 === filters.accountId ||
+                         transaction.destination_account_id_base44 === filters.accountId;
+    const tagMatch = filters.tagId === "all" || transaction.tag_id_base44 === filters.tagId;
     
     // Datas em string 'YYYY-MM-DD' podem ser interpretadas como UTC. 
     // Substituir hífens por barras força a interpretação como data local, evitando erros de fuso horário.
@@ -209,8 +213,8 @@ export default function TransactionsPage() {
     
     const searchTermMatch = filters.searchTerm === "" || 
       transaction.description.toLowerCase().includes(filters.searchTerm.toLowerCase()) ||
-      (accounts.find(a => a.id === transaction.account_id)?.name.toLowerCase().includes(filters.searchTerm.toLowerCase())) ||
-      (tags.find(t => t.id === transaction.tag_id)?.name.toLowerCase().includes(filters.searchTerm.toLowerCase()));
+      (accounts.find(a => a.id === transaction.account_id_base44)?.name.toLowerCase().includes(filters.searchTerm.toLowerCase())) ||
+      (tags.find(t => t.id === transaction.tag_id_base44)?.name.toLowerCase().includes(filters.searchTerm.toLowerCase()));
 
     return typeMatch && accountMatch && tagMatch && periodMatch && searchTermMatch;
   });
@@ -233,7 +237,7 @@ export default function TransactionsPage() {
     ...t,
     // Add currency for the main account involved in the transaction (source account)
     // This will be used for the 'amount' column in the list
-    currency: accountCurrencyMap.get(t.account_id) || 'BRL' // Default to BRL or a sensible default if not found
+    currency: accountCurrencyMap.get(t.account_id_base44) || 'BRL' // Default to BRL or a sensible default if not found
   }));
 
 
@@ -258,7 +262,7 @@ export default function TransactionsPage() {
         .filter(t => {
           const tDate = new Date(t.transaction_date.replace(/-/g, '/'));
           tDate.setHours(0,0,0,0);
-          return (t.account_id === selectedAccountId || (t.transaction_type === "transfer" && t.destination_account_id === selectedAccountId)) &&
+          return (t.account_id_base44 === selectedAccountId || (t.transaction_type === "transfer" && t.destination_account_id_base44 === selectedAccountId)) &&
                  tDate.getTime() < periodFromDate.getTime();
         })
         .sort((a, b) => {
@@ -276,9 +280,9 @@ export default function TransactionsPage() {
         } else if (t.transaction_type === "expense") {
           balanceAtFilterStart -= amount;
         } else if (t.transaction_type === "transfer") {
-          if (t.account_id === selectedAccountId) { // Selected account is the source of the transfer (outflow)
+          if (t.account_id_base44 === selectedAccountId) { // Selected account is the source of the transfer (outflow)
             balanceAtFilterStart -= amount;
-          } else if (t.destination_account_id === selectedAccountId) { // Selected account is the destination of the transfer (inflow)
+          } else if (t.destination_account_id_base44 === selectedAccountId) { // Selected account is the destination of the transfer (inflow)
             balanceAtFilterStart += amount;
           }
         }
@@ -306,9 +310,9 @@ export default function TransactionsPage() {
         updatedBalance -= transactionAmount;
       } else if (t.transaction_type === "transfer") {
         // For transfers, apply to the selected account correctly based on its role (source/destination)
-        if (t.account_id === selectedAccountId) { // Selected account is the source
+        if (t.account_id_base44 === selectedAccountId) { // Selected account is the source
           updatedBalance -= transactionAmount;
-        } else if (t.destination_account_id === selectedAccountId) { // Selected account is the destination
+        } else if (t.destination_account_id_base44 === selectedAccountId) { // Selected account is the destination
           updatedBalance += transactionAmount;
         }
       }
@@ -345,7 +349,7 @@ export default function TransactionsPage() {
         <TransactionsHeader
           onAddTransaction={() => {
             // Se uma conta estiver selecionada no filtro, passa como um "template"
-            const template = filters.accountId !== 'all' ? { account_id: filters.accountId } : null;
+            const template = filters.accountId !== 'all' ? { account_id_base44: filters.accountId } : null;
             setEditingTransaction(template);
             setShowForm(true);
           }}
