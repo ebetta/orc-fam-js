@@ -65,6 +65,11 @@ export default function TransactionsList({
   const getAccountCurrency = (accountId) => accounts.find(acc => acc.id === accountId)?.currency || "BRL"; // Used for transaction amount
   const getTagName = (tagId) => tags.find(tag => tag.id === tagId)?.name || "N/A";
 
+  // Helper to get the correct ID for accounts/tags from transaction object
+  const getTransactionAccountId = (transaction) => transaction.account_id_base44 || transaction.account_id;
+  const getTransactionTagId = (transaction) => transaction.tag_id_base44 || transaction.tag_id;
+  const getTransactionDestinationAccountId = (transaction) => transaction.destination_account_id_base44 || transaction.destination_account_id;
+
   // Removed internal calculateProgressiveBalances, useEffect for it, and related states (transactionsWithBalances, isCalculatingBalances)
   // The `transactions` prop now comes pre-calculated with `progressiveBalance` and `progressiveBalanceCurrency` from the parent.
 
@@ -291,8 +296,13 @@ export default function TransactionsList({
               {transactions.map(transaction => {
                 const typeDetails = getTransactionTypeDetails(transaction.transaction_type);
                 const IconComponent = typeDetails.icon;
+
+                const accountId = getTransactionAccountId(transaction);
+                const tagId = getTransactionTagId(transaction);
+                const destinationAccountId = getTransactionDestinationAccountId(transaction);
+
                 // transaction.currency is now directly on the transaction object from parent
-                const transactionAccountCurrency = transaction.currency || getAccountCurrency(transaction.account_id);
+                const transactionAccountCurrency = transaction.currency || getAccountCurrency(accountId);
                 
                 const handleRowClick = (e) => {
                   // Não executar se o clique foi no botão de ação ou em um de seus filhos
@@ -336,15 +346,15 @@ export default function TransactionsList({
                     )}
                     <TableCell>
                       <div>
-                        <span className="text-sm text-gray-800 block">{getAccountName(transaction.account_id)}</span>
-                        {transaction.transaction_type === 'transfer' && transaction.destination_account_id && (
+                        <span className="text-sm text-gray-800 block">{getAccountName(accountId)}</span>
+                        {transaction.transaction_type === 'transfer' && destinationAccountId && (
                             <span className="text-xs text-gray-500 block">
-                                <ArrowRight className="inline w-3 h-3 mr-1" /> {getAccountName(transaction.destination_account_id)}
+                                <ArrowRight className="inline w-3 h-3 mr-1" /> {getAccountName(destinationAccountId)}
                             </span>
                         )}
-                        {transaction.tag_id && (
+                        {tagId && (
                           <Badge variant="secondary" className="text-xs mt-1">
-                            {getTagName(transaction.tag_id)}
+                            {getTagName(tagId)}
                           </Badge>
                         )}
                       </div>

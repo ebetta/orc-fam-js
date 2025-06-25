@@ -40,16 +40,20 @@ export default function TransactionForm({ transaction, accounts, tags, onSave, o
       description: transaction?.description || "",
       amount: transaction?.amount || 0,
       transaction_type: transaction?.transaction_type || "expense",
-      account_id: transaction?.account_id || (accounts.length > 0 ? accounts[0].id : ""),
-      destination_account_id: transaction?.destination_account_id || null,
-      tag_id: transaction?.tag_id || null,
+      // Read from _base44 field if editing, otherwise use default or first account
+      account_id: transaction?.account_id_base44 || transaction?.account_id || (accounts.length > 0 ? accounts[0].id : ""),
+      destination_account_id: transaction?.destination_account_id_base44 || transaction?.destination_account_id || null,
+      tag_id: transaction?.tag_id_base44 || transaction?.tag_id || null,
       transaction_date: transaction?.transaction_date ? format(parseISO(transaction.transaction_date), "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd"),
       notes: transaction?.notes || ""
     });
+
     // Se estiver editando uma transação com tag, e a tag existir na lista `tags`,
     // definir o `tagSearchValue` para o nome da tag para exibição correta no combobox.
-    if (transaction?.tag_id) {
-        const currentTag = tags.find(t => t.id === transaction.tag_id);
+    // Use the potentially mapped tag_id from formData
+    const currentTagId = transaction?.tag_id_base44 || transaction?.tag_id;
+    if (currentTagId) {
+        const currentTag = tags.find(t => t.id === currentTagId);
         if (currentTag) {
             setTagSearchValue(currentTag.name);
         } else {
@@ -64,13 +68,28 @@ export default function TransactionForm({ transaction, accounts, tags, onSave, o
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
+    // Map to _base44 names for Supabase
     const dataToSave = {
       ...formData,
       amount: parseFloat(formData.amount),
-      // Se for transferencia e nao tiver destination_account_id, ou se nao for transferencia, seta null
-      destination_account_id: formData.transaction_type === 'transfer' && formData.destination_account_id ? formData.destination_account_id : null,
-      tag_id: formData.tag_id || null
+      account_id_base44: formData.account_id,
+      tag_id_base44: formData.tag_id || null,
+      destination_account_id_base44: formData.transaction_type === 'transfer' && formData.destination_account_id ? formData.destination_account_id : null,
     };
+
+    // Remove original keys if they are not actual columns in Supabase
+    // to prevent potential errors if Supabase tries to insert them.
+    // Keep other formData fields like description, amount, transaction_type, transaction_date, notes.
+    delete dataToSave.account_id;
+    delete dataToSave.tag_id;
+    delete dataToSave.destination_account_id;
+
+    // Ensure that if it's not a transfer, destination_account_id_base44 is explicitly null or not present
+    if (formData.transaction_type !== 'transfer') {
+      delete dataToSave.destination_account_id_base44; // Or set to null if the column must exist
+    }
+
+
     try {
       await onSave(dataToSave);
     } catch (error) {

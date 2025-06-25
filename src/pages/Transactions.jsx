@@ -76,7 +76,19 @@ export default function TransactionsPage() {
       if (accountsResponse.error) throw accountsResponse.error;
       if (tagsResponse.error) throw tagsResponse.error;
 
-      setTransactions(transactionsResponse.data || []);
+      const rawTransactions = transactionsResponse.data || [];
+      // Map _base44 fields to standard fields for consistent use in the frontend
+      const mappedTransactions = rawTransactions.map(t => ({
+        ...t,
+        account_id: t.account_id_base44 || t.account_id,
+        tag_id: t.tag_id_base44 || t.tag_id,
+        destination_account_id: t.destination_account_id_base44 || t.destination_account_id,
+        // We can choose to remove the _base44 fields after mapping if desired,
+        // but keeping them doesn't harm as long as frontend components prioritize standard names.
+        // For clarity, let's assume for now components will use the standard names after this mapping.
+      }));
+
+      setTransactions(mappedTransactions);
       setAccounts(accountsResponse.data || []);
       setTags(tagsResponse.data || []);
 
