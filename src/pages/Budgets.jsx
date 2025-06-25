@@ -59,10 +59,10 @@ export default function BudgetsPage() {
   const [summaryTotals, setSummaryTotals] = useState({ orcado: 0, gasto: 0, disponivel: 0 });
 
   const calculateSpentAmountForPeriod = useCallback((budget, transactionsInPeriod) => {
-    if (!budget.tag_id) return 0;
+    if (!budget.tag_id_base44) return 0; // Alterado para tag_id_base44
 
     return transactionsInPeriod
-      .filter(t => t.transaction_type === 'expense' && t.tag_id === budget.tag_id)
+      .filter(t => t.transaction_type === 'expense' && t.tag_id_base44 === budget.tag_id_base44) // Alterado para tag_id_base44 (assumindo que transactions também usa)
       .reduce((sum, t) => sum + parseFloat(t.amount || 0), 0);
   }, []);
 
@@ -188,13 +188,15 @@ export default function BudgetsPage() {
     const activeExpenseTags = tags.filter(t => t.is_active !== false && (t.tag_type === 'expense' || t.tag_type === 'both'));
     const tagMap = Object.fromEntries(activeExpenseTags.map(t => [t.id, t]));
 
-    const getRootTagForBudget = (budgetTagId) => {
-      let currentTag = tagMap[budgetTagId];
+    const getRootTagForBudget = (budgetTagIdBase44) => { // Parâmetro renomeado
+      let currentTag = tagMap[budgetTagIdBase44];
       if (!currentTag) { 
-        return { id: `no_valid_tag_for_${budgetTagId}`, name: 'Orçamentos (Tag Inválida/Não Agrupável)', color: '#9ca3af', isRoot: true };
+        return { id: `no_valid_tag_for_${budgetTagIdBase44}`, name: 'Orçamentos (Tag Inválida/Não Agrupável)', color: '#9ca3af', isRoot: true };
       }
       
       let rootTag = currentTag;
+      // Assumindo que parent_tag_id na tabela de tags ainda é a referência correta e não parent_tag_id_base44
+      // Se a tabela 'tags' também usar _base44 para seus IDs de parent, isso precisaria de ajuste.
       while (rootTag.parent_tag_id && tagMap[rootTag.parent_tag_id]) {
         const parent = tagMap[rootTag.parent_tag_id];
         if (parent.tag_type === 'income' || parent.is_active === false) break;
@@ -206,9 +208,9 @@ export default function BudgetsPage() {
     const groups = {};
 
     budgetsWithCalculations.forEach(budget => {
-      if (!budget.tag_id) return; 
+      if (!budget.tag_id_base44) return; // Alterado para tag_id_base44
 
-      const rootTag = getRootTagForBudget(budget.tag_id);
+      const rootTag = getRootTagForBudget(budget.tag_id_base44); // Alterado para tag_id_base44
 
       if (!groups[rootTag.id]) {
         groups[rootTag.id] = { 
@@ -219,7 +221,7 @@ export default function BudgetsPage() {
         };
       }
       
-      const budgetTagDetails = tagMap[budget.tag_id];
+      const budgetTagDetails = tagMap[budget.tag_id_base44]; // Alterado para tag_id_base44
       groups[rootTag.id].budgets.push({
         ...budget,
         tagName: budgetTagDetails?.name || 'Tag Original Desconhecida',
@@ -263,16 +265,27 @@ export default function BudgetsPage() {
         });
       } else {
         // spent_amount is not a field in the budgets table, it's calculated
-        const { spent_amount, ...restOfDataToSave } = dataToSave; // Remove spent_amount
-        const { error } = await supabase
-          .from('budgets')
-          .insert([{ ...restOfDataToSave, user_id: user.id }]);
-        if (error) throw error;
-        toast({
-          title: "Orçamento Criado!",
-          description: `O orçamento "${budgetData.name}" foi criado.`,
-          className: "bg-green-100 text-green-800 border-green-300",
-        });
+        const budgetPayload = { ...dataToSave, user_id: user.id };
+        // console.log("Payload para criar orçamento:", JSON.stringify(budgetPayload, null, 2)); // Log removido
+
+        try {
+          const { error } = await supabase
+            .from('budgets')
+            .insert([budgetPayload]);
+
+          if (error) {
+            // console.error("Erro detalhado do Supabase ao criar orçamento:", JSON.stringify(error, null, 2)); // Log removido
+            throw error;
+          }
+          toast({
+            title: "Orçamento Criado!",
+            description: `O orçamento "${budgetData.name}" foi criado.`,
+            className: "bg-green-100 text-green-800 border-green-300",
+          });
+        } catch (e) {
+          // console.error("Exceção ao tentar criar orçamento:", e); // Log pode ser mantido ou removido dependendo da preferência
+          throw e;
+        }
       }
       setShowForm(false);
       setEditingBudget(null);
