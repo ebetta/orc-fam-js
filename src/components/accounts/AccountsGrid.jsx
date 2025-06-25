@@ -115,8 +115,8 @@ export default function AccountsGrid({ accounts, isLoading, onEditAccount, onDel
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
       {accounts.map((account, index) => {
         const config = accountTypeConfig[account.account_type] || accountTypeConfig.checking;
-        // Simplified balance to use initial_balance as current_balance is not directly stored
-        const balance = account.initial_balance || 0;
+        // Use current_balance instead of initial_balance
+        const balance = account.current_balance || 0;
         const currency = account.currency || 'BRL';
 
         return (
@@ -176,8 +176,8 @@ export default function AccountsGrid({ accounts, isLoading, onEditAccount, onDel
                     <p className={`text-3xl font-bold ${balance < 0 ? 'text-red-600' : 'text-gray-900'}`}>
                       {formatCurrency(balance, currency)}
                     </p>
-                    {/* Changed "Saldo atual" to "Saldo Inicial" for clarity */}
-                    <p className="text-gray-600 text-sm">Saldo Inicial</p>
+                    {/* Changed "Saldo Inicial" to "Saldo Atual" */}
+                    <p className="text-gray-600 text-sm">Saldo Atual</p>
                   </div>
 
                   {account.bank && (
