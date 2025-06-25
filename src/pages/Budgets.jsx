@@ -263,9 +263,10 @@ export default function BudgetsPage() {
         });
       } else {
         // spent_amount is not a field in the budgets table, it's calculated
+        const { spent_amount, ...restOfDataToSave } = dataToSave; // Remove spent_amount
         const { error } = await supabase
           .from('budgets')
-          .insert([{ ...dataToSave, user_id: user.id }]);
+          .insert([{ ...restOfDataToSave, user_id: user.id }]);
         if (error) throw error;
         toast({
           title: "Orçamento Criado!",
