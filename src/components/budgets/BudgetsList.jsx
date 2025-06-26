@@ -197,7 +197,10 @@ export default function BudgetsList({
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {group.budgets.map(budget => {
+                  {group.budgets
+                    .slice() // Create a shallow copy to avoid mutating the original array
+                    .sort((a, b) => (b.total_budgeted_for_period ?? b.amount ?? 0) - (a.total_budgeted_for_period ?? a.amount ?? 0))
+                    .map(budget => {
                     const individualSpent = budget.spent_amount || 0;
                     const individualTotal = budget.total_budgeted_for_period ?? budget.amount ?? 0;
                     const individualPercentage = individualTotal > 0 ? (individualSpent / individualTotal) * 100 : 0;
