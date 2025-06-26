@@ -71,13 +71,13 @@ export default function TransactionsList({
   const getTransactionDestinationAccountId = (transaction) => transaction.destination_account_id_base44 || transaction.destination_account_id;
 
   // Removed internal calculateProgressiveBalances, useEffect for it, and related states (transactionsWithBalances, isCalculatingBalances)
-  // The `transactions` prop now comes pre-calculated with `progressiveBalance` and `progressiveBalanceCurrency` from the parent.
+  // The `transactions` prop now comes pre-calculated with `saldo` and `saldoCurrency` from the parent.
 
-  // Determinar se deve mostrar a coluna de saldo
-  // This logic is based on props passed from parent, parent already handles this visibility.
-  // The parent `TransactionsPage.jsx` calculates `progressiveBalance` conditionally.
-  // If `progressiveBalance` is null on a transaction, we can infer it shouldn't be shown or is unavailable.
-  const shouldShowBalanceColumn = transactions.length > 0 && transactions.some(t => t.progressiveBalance !== null) && filters?.tagId === "all" && currentPage === 1;
+  // Determine if the "Saldo" column should be shown.
+  // It should be shown if the `filters.period.from` is set, as this is a condition for saldo calculation in the parent.
+  // Or more broadly, if any transaction has a non-null saldo.
+  const shouldShowBalanceColumn = transactions.length > 0 && transactions.some(t => t.saldo !== null);
+
 
   // Componente de Paginação
   const PaginationComponent = () => {
