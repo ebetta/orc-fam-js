@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react"; // Added useMemo here for clarity, though React.useMemo would also work if React is imported.
 // import { Transaction } from "@/api/entities"; // Removed
 // import { Account } from "@/api/entities"; // Removed
 // import { Tag } from "@/api/entities"; // Removed
