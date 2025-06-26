@@ -215,7 +215,7 @@ export default function BudgetsList({
                         <TableCell className="text-right">{formatCurrency(individualTotal)}</TableCell>
                         <TableCell 
                           className="text-right font-medium hover:underline cursor-pointer text-blue-600"
-                          onClick={() => handleSpentAmountClick(budget.tag_id)}
+                          onClick={() => handleSpentAmountClick(budget.tag_id_base44)}
                           title="Ver transações desta tag no período selecionado"
                         >
                           {formatCurrency(individualSpent)}

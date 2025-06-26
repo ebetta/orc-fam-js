@@ -186,32 +186,53 @@ export default function BudgetsPage() {
     }
 
     const activeExpenseTags = tags.filter(t => t.is_active !== false && (t.tag_type === 'expense' || t.tag_type === 'both'));
-    const tagMap = Object.fromEntries(activeExpenseTags.map(t => [t.id, t]));
 
-    const getRootTagForBudget = (budgetTagIdBase44) => { // Parâmetro renomeado
-      let currentTag = tagMap[budgetTagIdBase44];
+    // Mapa de tags por ID principal (Supabase ID)
+    const tagMapById = Object.fromEntries(activeExpenseTags.map(t => [t.id, t]));
+    // Mapa de tags por ID legado (base44 ID)
+    // Presume-se que cada tag tenha um campo 'tag_id_base44' que armazena o ID original do sistema base44.
+    // E que 'tags.parent_tag_id' se refere ao 'tags.id' (PK da Supabase)
+    const tagMapByBase44Id = Object.fromEntries(activeExpenseTags.filter(t => t.tag_id_base44).map(t => [t.tag_id_base44, t]));
+
+    const getRootTagForBudget = (budgetTagIdBase44Value) => {
+      // 1. Encontrar a tag inicial usando o ID_base44 do orçamento.
+      // Esta tag é um objeto da tabela 'tags' do Supabase.
+      let currentTag = tagMapByBase44Id[budgetTagIdBase44Value];
+
       if (!currentTag) { 
-        return { id: `no_valid_tag_for_${budgetTagIdBase44}`, name: 'Orçamentos (Tag Inválida/Não Agrupável)', color: '#9ca3af', isRoot: true };
+        // Se a tag_id_base44 do orçamento não corresponder a nenhuma tag conhecida,
+        // retorna um objeto indicando que não pode ser agrupada adequadamente.
+        return {
+          id: `no_base44_tag_for_${budgetTagIdBase44Value}`,
+          name: 'Orçamentos (Tag Legada Desconhecida/Não Agrupável)',
+          color: '#9ca3af',
+          isRoot: true
+        };
       }
       
+      // currentTag agora é a tag do Supabase que corresponde ao budget.tag_id_base44.
+      // A partir daqui, a lógica de subida na hierarquia usa o ID principal (Supabase) e parent_tag_id.
       let rootTag = currentTag;
-      // Assumindo que parent_tag_id na tabela de tags ainda é a referência correta e não parent_tag_id_base44
-      // Se a tabela 'tags' também usar _base44 para seus IDs de parent, isso precisaria de ajuste.
-      while (rootTag.parent_tag_id && tagMap[rootTag.parent_tag_id]) {
-        const parent = tagMap[rootTag.parent_tag_id];
+      while (rootTag.parent_tag_id && tagMapById[rootTag.parent_tag_id]) {
+        const parent = tagMapById[rootTag.parent_tag_id];
+        // Não subir para pais que são de 'income' ou inativos, pois o agrupamento é para despesas.
         if (parent.tag_type === 'income' || parent.is_active === false) break;
         rootTag = parent;
       }
-      return { ...rootTag, isRoot: true };
+      return { ...rootTag, isRoot: true }; // Marcamos a tag raiz encontrada.
     };
 
     const groups = {};
 
     budgetsWithCalculations.forEach(budget => {
-      if (!budget.tag_id_base44) return; // Alterado para tag_id_base44
+      if (!budget.tag_id_base44) { // Se o orçamento não tiver uma tag_id_base44, não pode ser agrupado.
+          // Poderia ser adicionado a um grupo "Sem tag" se desejado. Por ora, é ignorado.
+          return;
+      }
 
-      const rootTag = getRootTagForBudget(budget.tag_id_base44); // Alterado para tag_id_base44
+      const rootTag = getRootTagForBudget(budget.tag_id_base44);
 
+      // Usar o ID da rootTag (que é o Supabase ID) para agrupar.
       if (!groups[rootTag.id]) {
         groups[rootTag.id] = { 
           parentTag: rootTag, 
@@ -221,11 +242,13 @@ export default function BudgetsPage() {
         };
       }
       
-      const budgetTagDetails = tagMap[budget.tag_id_base44]; // Alterado para tag_id_base44
+      // Detalhes da tag específica do orçamento (usando tag_id_base44 para encontrar a tag original)
+      const budgetSpecificTagDetails = tagMapByBase44Id[budget.tag_id_base44];
       groups[rootTag.id].budgets.push({
         ...budget,
-        tagName: budgetTagDetails?.name || 'Tag Original Desconhecida',
-        tagColor: budgetTagDetails?.color || '#cccccc'
+        // Usar o nome e cor da tag específica do orçamento, não da rootTag.
+        tagName: budgetSpecificTagDetails?.name || 'Tag Específica Desconhecida',
+        tagColor: budgetSpecificTagDetails?.color || '#cccccc'
       });
       groups[rootTag.id].groupTotalOrcado += budget.total_budgeted_for_period || 0;
       groups[rootTag.id].groupTotalGasto += parseFloat(budget.spent_amount || 0);
