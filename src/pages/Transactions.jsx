@@ -11,6 +11,7 @@ import TransactionsHeader from "../components/transactions/TransactionsHeader";
 import TransactionForm from "../components/transactions/TransactionForm";
 import TransactionsList from "../components/transactions/TransactionsList";
 import PeriodSummary from "../components/transactions/PeriodSummary";
+import { convertCurrency } from "../components/utils/CurrencyConverter"; // Moved to top level
 
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState([]);
