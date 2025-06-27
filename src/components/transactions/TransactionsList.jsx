@@ -77,9 +77,7 @@ export default function TransactionsList({
   // This logic is based on props passed from parent, parent already handles this visibility.
   // The parent `TransactionsPage.jsx` calculates `progressiveBalance` conditionally.
   // If `progressiveBalance` is null on a transaction, we can infer it shouldn't be shown or is unavailable.
-  // const shouldShowBalanceColumn = transactions.length > 0 && transactions.some(t => t.progressiveBalance !== null) && filters?.tagId === "all" && currentPage === 1;
-  // New condition: only show if filters.tagId is 'all'
-  const shouldShowBalanceColumn = filters?.tagId === "all";
+  const shouldShowBalanceColumn = filters?.tagId === "all" && currentPage === 1;
 
   // Componente de Paginação
   const PaginationComponent = () => {
