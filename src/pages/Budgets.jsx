@@ -59,10 +59,10 @@ export default function BudgetsPage() {
   const [summaryTotals, setSummaryTotals] = useState({ orcado: 0, gasto: 0, disponivel: 0 });
 
   const calculateSpentAmountForPeriod = useCallback((budget, transactionsInPeriod) => {
-    if (!budget.tag_id_base44) return 0; // Alterado para tag_id_base44
+    if (!budget.tag_id) return 0; // Alterado para tag_id
 
     return transactionsInPeriod
-      .filter(t => t.transaction_type === 'expense' && t.tag_id_base44 === budget.tag_id_base44) // Alterado para tag_id_base44 (assumindo que transactions também usa)
+      .filter(t => t.transaction_type === 'expense' && t.tag_id === budget.tag_id) // Alterado para tag_id (assumindo que transactions também usa)
       .reduce((sum, t) => sum + parseFloat(t.amount || 0), 0);
   }, []);
 
@@ -191,13 +191,13 @@ export default function BudgetsPage() {
     // Este será o único mapa necessário para tags.
     const tagMapById = Object.fromEntries(activeExpenseTags.map(t => [t.id, t]));
 
-    const getRootTagForBudget = (budgetTagId) => { // budgetTagId é o `budget.tag_id_base44` que contém o UUID da tag
+    const getRootTagForBudget = (budgetTagId) => { // budgetTagId é o `budget.tag_id` que contém o UUID da tag
       // 1. Encontrar a tag específica do orçamento usando o ID fornecido pelo orçamento.
-      // Este ID (budget.tag_id_base44) é esperado ser o UUID da tag (tags.id).
+      // Este ID (budget.tag_id) é esperado ser o UUID da tag (tags.id).
       let currentTag = tagMapById[budgetTagId];
 
       if (!currentTag) { 
-        // Se o budget.tag_id_base44 não corresponder a nenhum tags.id conhecido.
+        // Se o budget.tag_id não corresponder a nenhum tags.id conhecido.
         return {
           id: `unmapped_budget_tag_${budgetTagId}`,
           name: 'Orçamentos (Tag do Orçamento não encontrada no mapa de tags)',
@@ -206,11 +206,11 @@ export default function BudgetsPage() {
         };
       }
       
-      // currentTag é a tag do Supabase que corresponde ao budget.tag_id_base44 (que é um tags.id).
-      // A lógica de subida na hierarquia usa o campo 'parent_tag_id_base44' (que contém o 'id' UUID do pai).
+      // currentTag é a tag do Supabase que corresponde ao budget.tag_id (que é um tags.id).
+      // A lógica de subida na hierarquia usa o campo 'parent_tag_id' (que contém o 'id' UUID do pai).
       let rootTag = currentTag;
-      while (rootTag.parent_tag_id_base44 && tagMapById[rootTag.parent_tag_id_base44]) {
-        const parent = tagMapById[rootTag.parent_tag_id_base44];
+      while (rootTag.parent_tag_id && tagMapById[rootTag.parent_tag_id]) {
+        const parent = tagMapById[rootTag.parent_tag_id];
         // Não subir para pais que são de 'income' ou inativos.
         if (parent.tag_type === 'income' || parent.is_active === false) break;
         rootTag = parent;
@@ -221,12 +221,12 @@ export default function BudgetsPage() {
     const groups = {};
 
     budgetsWithCalculations.forEach(budget => {
-      // budget.tag_id_base44 é o ID (UUID) que o orçamento usa para referenciar uma tag na tabela 'tags'.
-      if (!budget.tag_id_base44) {
-          return; // Orçamentos sem tag_id_base44 não podem ser agrupados.
+      // budget.tag_id é o ID (UUID) que o orçamento usa para referenciar uma tag na tabela 'tags'.
+      if (!budget.tag_id) {
+          return; // Orçamentos sem tag_id não podem ser agrupados.
       }
 
-      const rootTag = getRootTagForBudget(budget.tag_id_base44);
+      const rootTag = getRootTagForBudget(budget.tag_id);
 
       // Agrupar pelo 'id' (UUID) da rootTag encontrada.
       if (!groups[rootTag.id]) {
@@ -238,12 +238,12 @@ export default function BudgetsPage() {
         };
       }
       
-      // Detalhes da tag específica do orçamento (usando budget.tag_id_base44 para encontrar a tag em tagMapById)
-      const budgetSpecificTagDetails = tagMapById[budget.tag_id_base44];
+      // Detalhes da tag específica do orçamento (usando budget.tag_id para encontrar a tag em tagMapById)
+      const budgetSpecificTagDetails = tagMapById[budget.tag_id];
       groups[rootTag.id].budgets.push({
         ...budget,
         // Usar o nome e cor da tag específica do orçamento.
-        tagName: budgetSpecificTagDetails?.name || 'Tag do Orçamento Desconhecida', // Deveria ser encontrada se budget.tag_id_base44 é um UUID válido em tagMapById
+        tagName: budgetSpecificTagDetails?.name || 'Tag do Orçamento Desconhecida', // Deveria ser encontrada se budget.tag_id é um UUID válido em tagMapById
         tagColor: budgetSpecificTagDetails?.color || '#cccccc'
       });
       groups[rootTag.id].groupTotalOrcado += budget.total_budgeted_for_period || 0;
