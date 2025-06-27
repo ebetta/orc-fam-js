@@ -58,11 +58,36 @@ export default function BudgetsPage() {
   const [groupedBudgetsForAccordion, setGroupedBudgetsForAccordion] = useState([]);
   const [summaryTotals, setSummaryTotals] = useState({ orcado: 0, gasto: 0, disponivel: 0 });
 
-  const calculateSpentAmountForPeriod = useCallback((budget, transactionsInPeriod) => {
-    if (!budget.tag_id) return 0; // Alterado para tag_id
+  const calculateSpentAmountForPeriod = useCallback((budget, transactionsInPeriod, allTags) => {
+    if (!budget.tag_id) return 0; // budget.tag_id é o ID da tag específica do orçamento.
+
+    // Encontrar todas as tags filhas (e a própria tag) que pertencem à tag do orçamento.
+    // Isso é necessário porque uma transação pode estar em uma sub-tag, mas ainda deve contar para o orçamento da tag pai.
+    const relevantTagIds = new Set();
+    const budgetTag = allTags.find(t => t.id === budget.tag_id);
+
+    if (budgetTag) {
+      relevantTagIds.add(budgetTag.id); // Adiciona a própria tag do orçamento
+
+      // Função para encontrar todas as tags filhas recursivamente
+      const findChildTags = (parentId) => {
+        allTags.forEach(tag => {
+          if (tag.parent_tag_id === parentId) {
+            relevantTagIds.add(tag.id);
+            findChildTags(tag.id); // Recursão para encontrar netas, etc.
+          }
+        });
+      };
+
+      findChildTags(budgetTag.id); // Encontra todas as tags filhas da tag do orçamento
+    } else {
+      // Se a tag do orçamento não for encontrada, não podemos calcular os gastos.
+      // Isso pode indicar um problema de dados ou uma tag inativa.
+      return 0;
+    }
 
     return transactionsInPeriod
-      .filter(t => t.transaction_type === 'expense' && t.tag_id === budget.tag_id) // Alterado para tag_id (assumindo que transactions também usa)
+      .filter(t => t.transaction_type === 'expense' && relevantTagIds.has(t.tag_id)) // Verifica se a transação pertence a qualquer uma das tags relevantes (principal ou filhas)
       .reduce((sum, t) => sum + parseFloat(t.amount || 0), 0);
   }, []);
 
@@ -165,7 +190,7 @@ export default function BudgetsPage() {
       
       return {
         ...budget,
-        spent_amount: calculateSpentAmountForPeriod(budget, transactionsForPeriod),
+        spent_amount: calculateSpentAmountForPeriod(budget, transactionsForPeriod, tags), // Pass allTags (renamed to tags here)
         total_budgeted_for_period: totalBudgetedForPeriod,
       }
     });
