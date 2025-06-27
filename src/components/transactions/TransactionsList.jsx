@@ -213,7 +213,7 @@ export default function TransactionsList({
               <TableRow>
                 <TableHead className="pl-4">Descrição / Tipo</TableHead>
                 <TableHead>Valor</TableHead>
-                {shouldShowBalanceColumn && <TableHead>Saldo (BRL)</TableHead>}
+                <TableHead>Saldo</TableHead> {/* Alterado aqui */}
                 <TableHead>Conta / Tag</TableHead>
                 <TableHead>Data</TableHead>
                 <TableHead className="text-right pr-4">Ações</TableHead>
@@ -229,7 +229,7 @@ export default function TransactionsList({
                     </div>
                   </TableCell>
                   <TableCell><Skeleton className="h-5 w-20" /></TableCell>
-                  {shouldShowBalanceColumn && <TableCell><Skeleton className="h-5 w-24" /></TableCell>}
+                  <TableCell><Skeleton className="h-5 w-24" /></TableCell> {/* Alterado aqui */}
                   <TableCell><Skeleton className="h-5 w-24" /></TableCell>
                   <TableCell><Skeleton className="h-5 w-20" /></TableCell>
                   <TableCell className="text-right"><Skeleton className="h-8 w-8 ml-auto rounded-md" /></TableCell>
@@ -284,7 +284,7 @@ export default function TransactionsList({
             <TableRow>
               <TableHead className="pl-4">Descrição / Tipo</TableHead>
               <TableHead>Valor</TableHead>
-              {shouldShowBalanceColumn && <TableHead>Saldo (BRL)</TableHead>}
+              <TableHead>Saldo</TableHead> {/* Alterado aqui */}
               <TableHead>Conta / Tag</TableHead>
               <TableHead>Data</TableHead>
               <TableHead className="text-right pr-4">Ações</TableHead>
@@ -335,15 +335,13 @@ export default function TransactionsList({
                     <TableCell className={`font-semibold ${typeDetails.color}`}>
                       {typeDetails.valuePrefix}{formatCurrencyWithSymbol(transaction.amount, transactionAccountCurrency)}
                     </TableCell>
-                    {shouldShowBalanceColumn && (
-                      // Use progressiveBalance and progressiveBalanceCurrency from the transaction object
-                      <TableCell className={`font-semibold ${transaction.progressiveBalance !== null && transaction.progressiveBalance < 0 ? 'text-red-600' : 'text-blue-700'}`}>
-                        {transaction.progressiveBalance !== null
-                          ? formatCurrencyWithSymbol(transaction.progressiveBalance, transaction.progressiveBalanceCurrency || 'BRL')
-                          : '-'
-                        }
-                      </TableCell>
-                    )}
+                    {/* Use progressiveBalance and progressiveBalanceCurrency from the transaction object */}
+                    <TableCell className={`font-semibold ${transaction.progressiveBalance !== null && transaction.progressiveBalance < 0 ? 'text-red-600' : 'text-blue-700'}`}>
+                      {transaction.progressiveBalance !== null
+                        ? formatCurrencyWithSymbol(transaction.progressiveBalance, transaction.progressiveBalanceCurrency || 'BRL')
+                        : '-'
+                      }
+                    </TableCell>
                     <TableCell>
                       <div>
                         <span className="text-sm text-gray-800 block">{getAccountName(accountId)}</span>
