@@ -23,7 +23,7 @@ export default function BudgetForm({ budget, tags, onSave, onCancel }) {
   const initialEndDate = budget?.end_date ? parseISO(budget.end_date) : endOfMonth(new Date());
 
   const [formData, setFormData] = useState({
-    tag_id_base44: budget?.tag_id_base44 || (tags.length > 0 ? tags[0].id : ""),
+    tag_id: budget?.tag_id || (tags.length > 0 ? tags[0].id : ""),
     amount: budget?.amount || 0,
     period: budget?.period || "monthly",
     start_date: format(initialStartDate, "yyyy-MM-dd"),
@@ -43,9 +43,9 @@ export default function BudgetForm({ budget, tags, onSave, onCancel }) {
     const startDate = budget?.start_date ? parseISO(budget.start_date) : startOfMonth(new Date());
     const endDate = budget?.end_date ? parseISO(budget.end_date) : endOfMonth(new Date());
     
-    const initialTagId = budget?.tag_id_base44 || (tags.length > 0 ? tags[0].id : "");
+    const initialTagId = budget?.tag_id || (tags.length > 0 ? tags[0].id : "");
     setFormData({
-      tag_id_base44: initialTagId,
+      tag_id: initialTagId,
       amount: budget?.amount || 0,
       period: budget?.period || "monthly",
       start_date: format(startDate, "yyyy-MM-dd"),
@@ -75,7 +75,7 @@ export default function BudgetForm({ budget, tags, onSave, onCancel }) {
     setIsLoading(true);
     try {
       // Gerar nome automaticamente baseado na tag e período
-      const selectedTag = tags.find(t => t.id === formData.tag_id_base44);
+      const selectedTag = tags.find(t => t.id === formData.tag_id);
       const tagName = selectedTag ? selectedTag.name : 'Tag';
       
       const periodLabel = budgetPeriods.find(p => p.value === formData.period)?.label || 'Período';
@@ -107,7 +107,7 @@ export default function BudgetForm({ budget, tags, onSave, onCancel }) {
   const filteredTags = tags.filter(tag =>
     tag.name.toLowerCase().includes(tagSearchValue.toLowerCase())
   );
-  const selectedTag = tags.find(t => t.id === formData.tag_id_base44); // Alterado aqui
+  const selectedTag = tags.find(t => t.id === formData.tag_id); // Alterado aqui
 
   return (
     <Card className="shadow-xl border-0 max-h-[90vh] flex flex-col">
@@ -177,13 +177,13 @@ export default function BudgetForm({ budget, tags, onSave, onCancel }) {
                             value={tag.name}
                             onSelect={(currentValue) => {
                               const currentSelectedTag = tags.find(t => t.name.toLowerCase() === currentValue.toLowerCase());
-                              handleInputChange("tag_id_base44", currentSelectedTag ? currentSelectedTag.id : ""); // Alterado aqui
+                              handleInputChange("tag_id", currentSelectedTag ? currentSelectedTag.id : ""); // Alterado aqui
                               setTagSearchValue(currentSelectedTag ? currentSelectedTag.name : "");
                               setTagPopoverOpen(false);
                             }}
                           >
                             <Check
-                              className={`mr-2 h-4 w-4 ${formData.tag_id_base44 === tag.id ? "opacity-100" : "opacity-0"}`} // Alterado aqui
+                              className={`mr-2 h-4 w-4 ${formData.tag_id === tag.id ? "opacity-100" : "opacity-0"}`} // Alterado aqui
                             />
                             {tag.name}
                           </CommandItem>
@@ -277,7 +277,7 @@ export default function BudgetForm({ budget, tags, onSave, onCancel }) {
             </Button>
             <Button
               type="submit"
-              disabled={isLoading || !formData.tag_id_base44} // Alterado aqui
+              disabled={isLoading || !formData.tag_id} // Alterado aqui
               className="h-12 px-8 bg-orange-600 hover:bg-orange-700"
             >
               {isLoading ? (
