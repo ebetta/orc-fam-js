@@ -240,77 +240,94 @@ export default function TransactionsPage() {
   // Initialize a map for quick currency lookup
   const accountCurrencyMap = new Map(accounts.map(acc => [acc.id, acc.currency]));
 
-  // Augment all transactions with their primary account's currency for display of 'amount'
-  let processedTransactions = paginatedTransactions.map(t => ({
+  // Augment paginated transactions with their primary account's currency
+  let transactionsForDisplay = paginatedTransactions.map(t => ({
     ...t,
     currency: accountCurrencyMap.get(t.account_id) || 'BRL'
   }));
 
-  // --- Progressive Balance Calculation ---
-  // The "Saldo" column for a transaction shows the balance *after* that transaction occurred.
-  // Transactions are displayed newest first (descending date).
+  if (accounts.length > 0 && transactionsForDisplay.length > 0) {
+    // Step 1: Calculate Saldo da Primeira Linha (Mais Recente)
+    // This is the balance *after* this most recent transaction in the current view.
+    const firstTransactionInView = transactionsForDisplay[0];
+    let balanceAfterFirstTx = 0;
+    let currencyForBalance = 'BRL';
 
-  // 1. Get all transactions (not just filtered ones yet, because earlier transactions affect later balances)
-  //    and sort them chronologically (oldest first) to correctly calculate running balances.
-  const allTransactionsChronological = [...transactions].sort((a, b) => {
-    const dateA = new Date(a.transaction_date.replace(/-/g, '/')).getTime();
-    const dateB = new Date(b.transaction_date.replace(/-/g, '/')).getTime();
-    if (dateA !== dateB) return dateA - dateB;
-    return (new Date(a.created_at || 0)).getTime() - (new Date(b.created_at || 0)).getTime();
-  });
+    // Get all transactions up to and including the firstTransactionInView, sorted chronologically
+    const allTransactionsChronological = [...transactions]
+      .sort((a, b) => {
+        const dateA = new Date(a.transaction_date.replace(/-/g, '/')).getTime();
+        const dateB = new Date(b.transaction_date.replace(/-/g, '/')).getTime();
+        if (dateA !== dateB) return dateA - dateB;
+        return (new Date(a.created_at || 0)).getTime() - (new Date(b.created_at || 0)).getTime();
+      });
 
-  // 2. Calculate the running balance after each transaction and store it in a map.
-  const balancesAfterTransactionMap = new Map();
-  let runningBalanceForMap;
-  let currentCurrencyForMap = 'BRL'; // Default
-
-  if (filters.accountId !== "all") {
-    // Single account selected
-    const selectedAccount = accounts.find(acc => acc.id === filters.accountId);
-    runningBalanceForMap = selectedAccount ? parseFloat(selectedAccount.initial_balance || 0) : 0;
-    currentCurrencyForMap = selectedAccount ? (selectedAccount.currency || 'BRL') : 'BRL';
-
-    for (const t of allTransactionsChronological) {
-      const amount = parseFloat(t.amount);
-      if (t.account_id === filters.accountId) {
-        if (t.transaction_type === "income") runningBalanceForMap += amount;
-        else if (t.transaction_type === "expense") runningBalanceForMap -= amount;
-        else if (t.transaction_type === "transfer") runningBalanceForMap -= amount;
-      } else if (t.transaction_type === "transfer" && t.destination_account_id === filters.accountId) {
-        runningBalanceForMap += amount;
+    if (filters.accountId !== "all") {
+      const selectedAccount = accounts.find(acc => acc.id === filters.accountId);
+      if (selectedAccount) {
+        balanceAfterFirstTx = parseFloat(selectedAccount.initial_balance || 0);
+        currencyForBalance = selectedAccount.currency || 'BRL';
+        for (const t of allTransactionsChronological) {
+          const amount = parseFloat(t.amount);
+          if (t.account_id === filters.accountId) {
+            if (t.transaction_type === "income") balanceAfterFirstTx += amount;
+            else if (t.transaction_type === "expense") balanceAfterFirstTx -= amount;
+            else if (t.transaction_type === "transfer") balanceAfterFirstTx -= amount;
+          } else if (t.transaction_type === "transfer" && t.destination_account_id === filters.accountId) {
+            balanceAfterFirstTx += amount;
+          }
+          if (t.id === firstTransactionInView.id) break; // Stop after processing the first transaction in view
+        }
       }
-      balancesAfterTransactionMap.set(t.id, { balance: runningBalanceForMap, currency: currentCurrencyForMap });
+    } else { // All accounts
+      balanceAfterFirstTx = accounts.reduce((sum, acc) => sum + parseFloat(acc.initial_balance || 0), 0);
+      currencyForBalance = 'BRL';
+      for (const t of allTransactionsChronological) {
+        const amount = parseFloat(t.amount);
+        if (t.transaction_type === "income") balanceAfterFirstTx += amount;
+        else if (t.transaction_type === "expense") balanceAfterFirstTx -= amount;
+        // Internal transfers are neutral for "all accounts" sum
+        if (t.id === firstTransactionInView.id) break;
+      }
     }
+    transactionsForDisplay[0].progressiveBalance = balanceAfterFirstTx;
+    transactionsForDisplay[0].progressiveBalanceCurrency = currencyForBalance;
+
+    // Step 2: Calculate Saldo das Linhas Subsequentes
+    for (let i = 1; i < transactionsForDisplay.length; i++) {
+      const prevTx = transactionsForDisplay[i-1]; // Linha anterior (mais nova)
+      const currentTx = transactionsForDisplay[i]; // Linha atual (mais antiga)
+
+      let saldoLinhaAnterior = prevTx.progressiveBalance;
+      let efeitoInversoTxAnterior = 0;
+      const amountPrevTx = parseFloat(prevTx.amount);
+
+      if (filters.accountId !== "all") {
+        const selectedId = filters.accountId;
+        if (prevTx.account_id === selectedId) { // Tx anterior foi da conta selecionada
+          if (prevTx.transaction_type === 'income') efeitoInversoTxAnterior = -amountPrevTx;
+          else if (prevTx.transaction_type === 'expense') efeitoInversoTxAnterior = +amountPrevTx;
+          else if (prevTx.transaction_type === 'transfer') efeitoInversoTxAnterior = +amountPrevTx; // Transferência de SAÍDA
+        } else if (prevTx.destination_account_id === selectedId && prevTx.transaction_type === 'transfer') { // Transferência de ENTRADA
+          efeitoInversoTxAnterior = -amountPrevTx;
+        }
+      } else { // Todas as Contas
+        if (prevTx.transaction_type === 'income') efeitoInversoTxAnterior = -amountPrevTx;
+        else if (prevTx.transaction_type === 'expense') efeitoInversoTxAnterior = +amountPrevTx;
+        // Transferências internas têm efeito inverso zero no saldo total
+      }
+      currentTx.progressiveBalance = saldoLinhaAnterior + efeitoInversoTxAnterior;
+      currentTx.progressiveBalanceCurrency = prevTx.progressiveBalanceCurrency;
+    }
+    transactionsWithProgressiveBalance = transactionsForDisplay;
   } else {
-    // All accounts selected
-    runningBalanceForMap = accounts.reduce((sum, acc) => sum + parseFloat(acc.initial_balance || 0), 0);
-    currentCurrencyForMap = 'BRL';
-
-    for (const t of allTransactionsChronological) {
-      const amount = parseFloat(t.amount);
-      if (t.transaction_type === "income") {
-        runningBalanceForMap += amount;
-      } else if (t.transaction_type === "expense") {
-        runningBalanceForMap -= amount;
-      }
-      balancesAfterTransactionMap.set(t.id, { balance: runningBalanceForMap, currency: currentCurrencyForMap });
-    }
-  }
-
-  // 3. Add 'progressiveBalance' (balance *after* transaction) to processedTransactions.
-  //    `processedTransactions` are already sorted for display (newest first, from paginatedTransactions).
-  //    Each transaction row will show the balance *after* that transaction occurred.
-  transactionsWithProgressiveBalance = processedTransactions.map(t => {
-    const balanceInfo = balancesAfterTransactionMap.get(t.id);
-    return {
+    // No accounts, or no transactions to display, or other edge cases
+    transactionsWithProgressiveBalance = transactionsForDisplay.map(t => ({
       ...t,
-      progressiveBalance: balanceInfo ? balanceInfo.balance : null,
-      progressiveBalanceCurrency: balanceInfo ? balanceInfo.currency : (filters.accountId !== "all" ? accounts.find(a=>a.id === t.account_id)?.currency || 'BRL' : 'BRL'),
-    };
-  });
-
-  // The visual running calculation (previously Step 4) has been removed based on user feedback
-  // to simplify and directly show balance after each transaction.
+      progressiveBalance: null,
+      progressiveBalanceCurrency: null
+    }));
+  }
 
   return (
     <div className="p-6 space-y-8 max-w-7xl mx-auto">
