@@ -246,7 +246,8 @@ export default function TransactionsPage() {
     currency: accountCurrencyMap.get(t.account_id) || 'BRL'
   }));
 
-  if (accounts.length > 0 && transactionsForDisplay.length > 0) {
+  // Condition to calculate and show balance: No specific tag selected
+  if (filters.tagId === 'all' && accounts.length > 0 && transactionsForDisplay.length > 0) {
     // Step 1: Calculate Saldo da Primeira Linha (Mais Recente)
     // This is the balance *after* this most recent transaction in the current view.
     const firstTransactionInView = transactionsForDisplay[0];
@@ -321,7 +322,8 @@ export default function TransactionsPage() {
     }
     transactionsWithProgressiveBalance = transactionsForDisplay;
   } else {
-    // No accounts, or no transactions to display, or other edge cases
+    // Conditions not met for balance calculation (e.g., a specific tag is selected, no accounts, or no transactions)
+    // Ensure progressiveBalance is null for all transactions to be displayed.
     transactionsWithProgressiveBalance = transactionsForDisplay.map(t => ({
       ...t,
       progressiveBalance: null,
