@@ -36,26 +36,26 @@ export default function TransactionForm({ transaction, accounts, tags, onSave, o
 
   useEffect(() => {
     // Reset form if transaction prop changes or for new transaction
+    // Parent component (TransactionsPage) already maps _base44 fields.
+    // Here, we rely on transaction.account_id, transaction.tag_id etc.
     setFormData({
       description: transaction?.description || "",
       amount: transaction?.amount || 0,
       transaction_type: transaction?.transaction_type || "expense",
-      // Read from _base44 field if editing, otherwise use default or first account
-      account_id: transaction?.account_id_base44 || transaction?.account_id || (accounts.length > 0 ? accounts[0].id : ""),
-      destination_account_id: transaction?.destination_account_id_base44 || transaction?.destination_account_id || null,
-      tag_id: transaction?.tag_id_base44 || transaction?.tag_id || null,
+      account_id: transaction?.account_id || (accounts.length > 0 ? accounts[0].id : ""),
+      destination_account_id: transaction?.destination_account_id || null,
+      tag_id: transaction?.tag_id || null,
       transaction_date: transaction?.transaction_date ? format(parseISO(transaction.transaction_date), "yyyy-MM-dd") : format(new Date(), "yyyy-MM-dd"),
       notes: transaction?.notes || ""
     });
 
     // Se estiver editando uma transação com tag, e a tag existir na lista `tags`,
     // definir o `tagSearchValue` para o nome da tag para exibição correta no combobox.
-    // Use the potentially mapped tag_id from formData
-    const currentTagId = transaction?.tag_id_base44 || transaction?.tag_id;
+    const currentTagId = transaction?.tag_id; // Use the direct tag_id
     if (currentTagId) {
-        const currentTag = tags.find(t => t.id === currentTagId);
-        if (currentTag) {
-            setTagSearchValue(currentTag.name);
+        const currentTagObject = tags.find(t => t.id === currentTagId);
+        if (currentTagObject) {
+            setTagSearchValue(currentTagObject.name);
         } else {
              setTagSearchValue(""); // Tag não encontrada ou nula
         }
@@ -68,27 +68,27 @@ export default function TransactionForm({ transaction, accounts, tags, onSave, o
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
-    // Map to _base44 names for Supabase
+
+    // Prepare data directly with the correct field names for Supabase
     const dataToSave = {
       ...formData,
       amount: parseFloat(formData.amount),
-      account_id_base44: formData.account_id,
-      tag_id_base44: formData.tag_id || null,
-      destination_account_id_base44: formData.transaction_type === 'transfer' && formData.destination_account_id ? formData.destination_account_id : null,
+      // account_id is already correctly named in formData
+      // tag_id is already correctly named in formData
+      tag_id: formData.tag_id || null, // Ensure null if empty
+      // destination_account_id is already correctly named in formData
+      destination_account_id: formData.transaction_type === 'transfer' && formData.destination_account_id ? formData.destination_account_id : null,
     };
 
-    // Remove original keys if they are not actual columns in Supabase
-    // to prevent potential errors if Supabase tries to insert them.
-    // Keep other formData fields like description, amount, transaction_type, transaction_date, notes.
-    delete dataToSave.account_id;
-    delete dataToSave.tag_id;
-    delete dataToSave.destination_account_id;
-
-    // Ensure that if it's not a transfer, destination_account_id_base44 is explicitly null or not present
+    // If not a transfer, ensure destination_account_id is null or removed
+    // (Supabase client might handle undefined fields by not sending them, which is good)
     if (formData.transaction_type !== 'transfer') {
-      delete dataToSave.destination_account_id_base44; // Or set to null if the column must exist
+      dataToSave.destination_account_id = null;
     }
 
+    // Fields that are not part of the main transaction table schema or are handled by Supabase (like id, user_id, created_at, updated_at)
+    // should not be explicitly sent unless intended.
+    // formData already contains the correct field names: description, amount, transaction_type, account_id, tag_id, transaction_date, notes, destination_account_id.
 
     try {
       await onSave(dataToSave);
