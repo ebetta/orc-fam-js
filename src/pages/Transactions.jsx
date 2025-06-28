@@ -164,7 +164,7 @@ export default function TransactionsPage() {
       }
 
       const [transactionsResponse, accountsResponse, tagsResponse] = await Promise.all([
-        supabase.from('transactions').select('*').order('transaction_date', { ascending: false }),
+        supabase.from('transactions').select('*').order('transaction_date', { ascending: false }).order('updated_at', { ascending: false }),
         supabase.from('accounts').select('*'),
         supabase.from('tags').select('*')
       ]);
