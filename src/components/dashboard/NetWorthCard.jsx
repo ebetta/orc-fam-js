@@ -6,11 +6,13 @@ import { motion } from "framer-motion";
 import { useNavigate } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { convertCurrency, useCurrencyConversion } from "../utils/CurrencyConverter";
+// import { useToast } from "@/components/ui/use-toast"; // Exemplo se fosse adicionar toast de erro
 
 export default function NetWorthCard({ netWorth, accounts, isLoading }) {
   const navigate = useNavigate();
   const [convertedNetWorth, setConvertedNetWorth] = useState(0);
-  const { isLoading: isConverting, preloadExchangeRates } = useCurrencyConversion();
+  const { isLoading: isConverting, preloadExchangeRates: preloadRatesFromHook } = useCurrencyConversion();
+  // const { toast } = useToast(); // Exemplo se fosse adicionar toast de erro
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -20,25 +22,30 @@ export default function NetWorthCard({ netWorth, accounts, isLoading }) {
   };
 
   useEffect(() => {
+    const localPreloadExchangeRates = preloadRatesFromHook;
+
     const calculateConvertedNetWorth = async () => {
-      if (isLoading || !accounts?.length) return;
+      // Se o dashboard ainda está carregando ou não há contas, define patrimônio como 0 e retorna.
+      if (isLoading || !accounts?.length) {
+        setConvertedNetWorth(0); // Zerar se não há contas ou se dados do dashboard estão carregando
+        return;
+      }
       
-      // Pré-carregar cotações das moedas utilizadas
       const uniqueCurrencies = [...new Set(accounts.map(acc => acc.currency || 'BRL'))];
       const foreignCurrencies = uniqueCurrencies.filter(curr => curr !== 'BRL');
       
       if (foreignCurrencies.length > 0) {
-        await preloadExchangeRates(foreignCurrencies);
+        await localPreloadExchangeRates(foreignCurrencies);
       }
 
       let totalInBRL = 0;
 
       try {
-        // Processar contas em paralelo para melhor performance
         const conversionPromises = accounts
           .filter(acc => acc.is_active !== false)
           .map(async (account) => {
-            const balance = account.current_balance || account.initial_balance || 0;
+            // Usar explicitamente initial_balance para consistência com outros cálculos de saldo.
+            const balance = parseFloat(account.initial_balance || 0);
             const currency = account.currency || 'BRL';
             
             if (currency === 'BRL') {
@@ -50,19 +57,22 @@ export default function NetWorthCard({ netWorth, accounts, isLoading }) {
           });
 
         const convertedBalances = await Promise.all(conversionPromises);
-        totalInBRL = convertedBalances.reduce((sum, balance) => sum + balance, 0);
+        totalInBRL = convertedBalances.reduce((sum, balance) => sum + (balance || 0), 0);
         
         setConvertedNetWorth(totalInBRL);
       } catch (error) {
         console.error('Erro ao converter patrimônio líquido:', error);
-        setConvertedNetWorth(netWorth); // Fallback para valor não convertido
+        // Em caso de erro, zerar o patrimônio ou mostrar um estado de erro em vez de fallback para prop não convertida.
+        setConvertedNetWorth(0);
+        // Poderia também definir um estado de erro para exibir uma mensagem ao usuário.
+        // toast({ title: "Erro ao calcular patrimônio", description: "Não foi possível converter todos os valores.", variant: "destructive" });
       }
     };
 
     calculateConvertedNetWorth();
-  }, [accounts, netWorth, isLoading, preloadExchangeRates]);
+  }, [accounts, netWorth, isLoading, preloadRatesFromHook]);
 
-  const activeAccounts = accounts.filter(acc => acc.is_active !== false);
+  const activeAccounts = accounts ? accounts.filter(acc => acc.is_active !== false) : [];
   const totalAccounts = activeAccounts.length;
 
   const handleNetWorthClick = () => {

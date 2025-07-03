@@ -73,16 +73,17 @@ export const getCurrencyExchangeRate = async (fromCurrency, toCurrency = 'BRL') 
       .select('rate')
       .eq('from_currency', fromCurrency)
       .eq('to_currency', toCurrency)
-      .eq('rate_date', today)
-      .order('created_at', { ascending: false })
+      .eq('rate_date', today) // Busca taxa para a data de HOJE
+      .order('created_at', { ascending: false }) // Pega a mais recente inserida para hoje (caso haja múltiplas)
       .limit(1)
       .maybeSingle();
 
     if (rateError) {
       console.error(`Erro ao buscar cotação ${fromCurrency}->${toCurrency} do DB (hoje):`, rateError.message);
+      // Não retorna aqui, continua para o fallback
     }
 
-    if (rateData && rateData.rate) {
+    if (rateData && typeof rateData.rate === 'number') { // VERIFICAR SE rateData.rate é um número
       memoryCache.set(cacheKey, rateData.rate);
       return rateData.rate;
     }
@@ -94,28 +95,31 @@ export const getCurrencyExchangeRate = async (fromCurrency, toCurrency = 'BRL') 
       .select('rate, rate_date')
       .eq('from_currency', fromCurrency)
       .eq('to_currency', toCurrency)
-      .lt('rate_date', today) // Ensure we only look for past dates if today's is not available
-      .order('rate_date', { ascending: false })
+      .lt('rate_date', today) // Taxa com data MENOR que hoje
+      .order('rate_date', { ascending: false }) // Pega a mais recente dessas datas anteriores
       .limit(1)
       .maybeSingle();
 
     if (fallbackError) {
       console.error(`Erro ao buscar cotação fallback ${fromCurrency}->${toCurrency}:`, fallbackError.message);
+      // Não retorna aqui, continua para o fallback final
     }
     
-    if (fallbackRateData && fallbackRateData.rate) {
+    if (fallbackRateData && typeof fallbackRateData.rate === 'number') { // VERIFICAR SE fallbackRateData.rate é um número
       console.log(`Usando cotação mais recente (${fallbackRateData.rate_date}) como fallback para ${fromCurrency}->${toCurrency}: ${fallbackRateData.rate}`);
-      // Cache this fallback with a specific key indicating it's a general fallback, not for "today"
-      memoryCache.set(`${fromCurrency}_${toCurrency}_fallback_${fallbackRateData.rate_date}`, fallbackRateData.rate);
+      // Cachear o fallback encontrado sob a chave de 'today' para otimizar futuras chamadas no mesmo dia.
+      memoryCache.set(cacheKey, fallbackRateData.rate);
       return fallbackRateData.rate;
     }
     
     console.warn(`Nenhuma cotação encontrada para ${fromCurrency} -> ${toCurrency} (nem hoje, nem anterior). Usando taxa 1.`);
+    memoryCache.set(cacheKey, 1); // Cachear o fallback de 1 para evitar buscas repetidas
     return 1; // Último recurso
 
   } catch (error) {
     console.error(`Erro geral ao buscar cotação ${fromCurrency} para ${toCurrency}:`, error.message);
-    return 1;
+    // Não cacheia em caso de erro geral, para permitir nova tentativa.
+    return 1; // Fallback em caso de erro inesperado
   }
 };
 
