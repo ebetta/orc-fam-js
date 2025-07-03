@@ -56,85 +56,109 @@ export const getHistoricalExchangeRate = async (fromCurrency, targetDate, toCurr
 
 
 export const getCurrencyExchangeRate = async (fromCurrency, toCurrency = 'BRL') => {
-  if (fromCurrency === toCurrency) return 1;
-  
-  const today = new Date().toISOString().split('T')[0]; // Formato YYYY-MM-DD
-  const cacheKey = `${fromCurrency}_${toCurrency}_${today}`; // Include date in cacheKey for daily rates
-  
-  // 1. Verificar cache em memória primeiro
-  if (memoryCache.has(cacheKey)) {
-    return memoryCache.get(cacheKey);
+  console.log(`[getCurrencyExchangeRate] Solicitado: ${fromCurrency} -> ${toCurrency}`);
+  if (fromCurrency === toCurrency) {
+    console.log('[getCurrencyExchangeRate] Moedas iguais, retornando 1.');
+    return 1;
   }
+  
+  const today = new Date().toISOString().split('T')[0];
+  const cacheKey = `${fromCurrency}_${toCurrency}_${today}`;
+  console.log(`[getCurrencyExchangeRate] Data de hoje (UTC): ${today}, Chave de cache: ${cacheKey}`);
+  
+  if (memoryCache.has(cacheKey)) {
+    const cachedRate = memoryCache.get(cacheKey);
+    console.log(`[getCurrencyExchangeRate] Taxa encontrada no cache para ${cacheKey}: ${cachedRate}`);
+    return cachedRate;
+  }
+  console.log(`[getCurrencyExchangeRate] Taxa não encontrada no cache para ${cacheKey}. Buscando no DB...`);
 
   try {
     // 2. Buscar na base de dados (Supabase) - Rate for TODAY
+    console.log(`[getCurrencyExchangeRate] Buscando taxa de HOJE (${today}) no DB para ${fromCurrency}->${toCurrency}`);
     const { data: rateData, error: rateError } = await supabase
       .from('exchange_rates')
       .select('rate')
       .eq('from_currency', fromCurrency)
       .eq('to_currency', toCurrency)
-      .eq('rate_date', today) // Busca taxa para a data de HOJE
-      .order('created_at', { ascending: false }) // Pega a mais recente inserida para hoje (caso haja múltiplas)
+      .eq('rate_date', today)
+      .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
 
     if (rateError) {
-      console.error(`Erro ao buscar cotação ${fromCurrency}->${toCurrency} do DB (hoje):`, rateError.message);
-      // Não retorna aqui, continua para o fallback
+      console.error(`[getCurrencyExchangeRate] Erro ao buscar cotação ${fromCurrency}->${toCurrency} do DB (hoje):`, rateError.message);
+    } else {
+      console.log(`[getCurrencyExchangeRate] Resultado da busca por taxa de HOJE:`, rateData);
     }
 
-    if (rateData && typeof rateData.rate === 'number') { // VERIFICAR SE rateData.rate é um número
+    if (rateData && typeof rateData.rate === 'number') {
+      console.log(`[getCurrencyExchangeRate] Taxa de HOJE encontrada: ${rateData.rate}. Cacheando e retornando.`);
       memoryCache.set(cacheKey, rateData.rate);
       return rateData.rate;
     }
+    console.log(`[getCurrencyExchangeRate] Taxa de HOJE não encontrada ou inválida. Tentando fallback...`);
 
     // 3. Fallback: tentar buscar cotação mais recente na base (qualquer data ANTERIOR a hoje)
-    // This is a general fallback if today's rate isn't available.
+    console.log(`[getCurrencyExchangeRate] Buscando taxa FALLBACK (< ${today}) no DB para ${fromCurrency}->${toCurrency}`);
     const { data: fallbackRateData, error: fallbackError } = await supabase
       .from('exchange_rates')
       .select('rate, rate_date')
       .eq('from_currency', fromCurrency)
       .eq('to_currency', toCurrency)
-      .lt('rate_date', today) // Taxa com data MENOR que hoje
-      .order('rate_date', { ascending: false }) // Pega a mais recente dessas datas anteriores
+      .lt('rate_date', today)
+      .order('rate_date', { ascending: false })
       .limit(1)
       .maybeSingle();
 
     if (fallbackError) {
-      console.error(`Erro ao buscar cotação fallback ${fromCurrency}->${toCurrency}:`, fallbackError.message);
-      // Não retorna aqui, continua para o fallback final
+      console.error(`[getCurrencyExchangeRate] Erro ao buscar cotação fallback ${fromCurrency}->${toCurrency}:`, fallbackError.message);
+    } else {
+      console.log(`[getCurrencyExchangeRate] Resultado da busca por taxa FALLBACK:`, fallbackRateData);
     }
     
-    if (fallbackRateData && typeof fallbackRateData.rate === 'number') { // VERIFICAR SE fallbackRateData.rate é um número
-      console.log(`Usando cotação mais recente (${fallbackRateData.rate_date}) como fallback para ${fromCurrency}->${toCurrency}: ${fallbackRateData.rate}`);
-      // Cachear o fallback encontrado sob a chave de 'today' para otimizar futuras chamadas no mesmo dia.
+    if (fallbackRateData && typeof fallbackRateData.rate === 'number') {
+      console.log(`[getCurrencyExchangeRate] Taxa FALLBACK encontrada (${fallbackRateData.rate_date}): ${fallbackRateData.rate}. Cacheando (para ${cacheKey}) e retornando.`);
       memoryCache.set(cacheKey, fallbackRateData.rate);
       return fallbackRateData.rate;
     }
     
-    console.warn(`Nenhuma cotação encontrada para ${fromCurrency} -> ${toCurrency} (nem hoje, nem anterior). Usando taxa 1.`);
-    memoryCache.set(cacheKey, 1); // Cachear o fallback de 1 para evitar buscas repetidas
-    return 1; // Último recurso
+    console.warn(`[getCurrencyExchangeRate] Nenhuma cotação encontrada para ${fromCurrency}->${toCurrency} (nem hoje, nem anterior). Usando taxa 1. Cacheando 1 para ${cacheKey}.`);
+    memoryCache.set(cacheKey, 1);
+    return 1;
 
   } catch (error) {
-    console.error(`Erro geral ao buscar cotação ${fromCurrency} para ${toCurrency}:`, error.message);
-    // Não cacheia em caso de erro geral, para permitir nova tentativa.
-    return 1; // Fallback em caso de erro inesperado
+    console.error(`[getCurrencyExchangeRate] Erro GERAL ao buscar cotação ${fromCurrency}->${toCurrency}:`, error.message);
+    return 1;
   }
 };
 
 // This function will now use getHistoricalExchangeRate when a targetDate is provided
 export const convertCurrency = async (amount, fromCurrency, toCurrency = 'BRL', targetDate = null) => {
-  if (fromCurrency === toCurrency) return amount;
+  console.log(`[convertCurrency] Solicitado converter: ${amount} ${fromCurrency} -> ${toCurrency}`, targetDate ? `na data ${targetDate}` : `(taxa mais recente)`);
+  if (fromCurrency === toCurrency) {
+    console.log('[convertCurrency] Moedas iguais, retornando amount original:', amount);
+    return amount;
+  }
+  if (typeof amount !== 'number' || isNaN(amount)) {
+    console.warn('[convertCurrency] Valor inválido fornecido:', amount, '. Retornando 0.');
+    return 0; // Retornar 0 se o valor não for um número válido
+  }
   
   let rate;
   if (targetDate) {
+    console.log(`[convertCurrency] Usando getHistoricalExchangeRate para data ${targetDate}.`);
+    // Assumindo que getHistoricalExchangeRate também terá logs ou já é confiável
     rate = await getHistoricalExchangeRate(fromCurrency, targetDate, toCurrency);
   } else {
-    // Fallback to current/latest rate if no specific date is given for conversion
+    console.log(`[convertCurrency] Usando getCurrencyExchangeRate (taxa mais recente).`);
     rate = await getCurrencyExchangeRate(fromCurrency, toCurrency);
   }
-  return amount * rate;
+  console.log(`[convertCurrency] Taxa obtida para ${fromCurrency}->${toCurrency}: ${rate}`);
+
+  const convertedAmount = amount * rate;
+  console.log(`[convertCurrency] Valor convertido: ${amount} * ${rate} = ${convertedAmount}`);
+  return convertedAmount;
 };
 
 export const formatCurrencyWithSymbol = (amount, currency = 'BRL') => {
