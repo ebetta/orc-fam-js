@@ -4,7 +4,56 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from "@/lib/supabaseClient"; // Added
 
 // Cache em memória para cotações já buscadas na sessão atual
-const memoryCache = new Map();
+const memoryCache = new Map(); // General cache
+const historicalRateCache = new Map(); // Cache specific for historical rates
+
+// Function to get exchange rate for a specific date or the closest earlier date
+export const getHistoricalExchangeRate = async (fromCurrency, targetDate, toCurrency = 'BRL') => {
+  if (fromCurrency === toCurrency) return 1;
+  if (!targetDate) {
+    console.warn('getHistoricalExchangeRate: targetDate is required. Falling back to 1.');
+    return 1;
+  }
+
+  const formattedTargetDate = typeof targetDate === 'string' ? targetDate.split('T')[0] : targetDate.toISOString().split('T')[0];
+  const cacheKey = `${fromCurrency}_${toCurrency}_${formattedTargetDate}`;
+
+  if (historicalRateCache.has(cacheKey)) {
+    return historicalRateCache.get(cacheKey);
+  }
+
+  try {
+    const { data, error } = await supabase
+      .from('exchange_rates')
+      .select('rate, rate_date')
+      .eq('from_currency', fromCurrency)
+      .eq('to_currency', toCurrency)
+      .lte('rate_date', formattedTargetDate) // Rate date is less than or equal to the target date
+      .order('rate_date', { ascending: false }) // Get the closest date
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      console.error(`Erro ao buscar cotação histórica ${fromCurrency}->${toCurrency} para data ${formattedTargetDate}:`, error.message);
+      return 1; // Fallback in case of error
+    }
+
+    if (data && data.rate) {
+      console.log(`Cotação histórica encontrada para ${fromCurrency}->${toCurrency} em ${data.rate_date} (solicitado ${formattedTargetDate}): ${data.rate}`);
+      historicalRateCache.set(cacheKey, data.rate);
+      return data.rate;
+    } else {
+      console.warn(`Nenhuma cotação histórica encontrada para ${fromCurrency}->${toCurrency} até ${formattedTargetDate}. Verifique se há taxas cadastradas para datas anteriores ou igual à solicitada. Usando taxa 1.`);
+      // Cache the fact that no rate was found to avoid repeated lookups for the same missing rate
+      historicalRateCache.set(cacheKey, 1);
+      return 1; // Fallback if no rate is found
+    }
+  } catch (err) {
+    console.error(`Erro inesperado em getHistoricalExchangeRate para ${fromCurrency}->${toCurrency} data ${formattedTargetDate}:`, err.message);
+    return 1; // Fallback
+  }
+};
+
 
 export const getCurrencyExchangeRate = async (fromCurrency, toCurrency = 'BRL') => {
   if (fromCurrency === toCurrency) return 1;
@@ -18,24 +67,19 @@ export const getCurrencyExchangeRate = async (fromCurrency, toCurrency = 'BRL') 
   }
 
   try {
-    // 2. Buscar na base de dados (Supabase)
-    // Prioritize user-specific rate for today, then global rate for today.
-    // This example assumes a simple structure; extend as needed for user vs global logic.
-    // For now, just fetch any rate for today.
+    // 2. Buscar na base de dados (Supabase) - Rate for TODAY
     const { data: rateData, error: rateError } = await supabase
       .from('exchange_rates')
       .select('rate')
       .eq('from_currency', fromCurrency)
       .eq('to_currency', toCurrency)
       .eq('rate_date', today)
-      // .is('user_id', null) // Example: for global rates. Add user_id logic if needed.
-      .order('created_at', { ascending: false }) // Get the latest if multiple for same day (e.g. user vs global)
+      .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
 
     if (rateError) {
-      console.error(`Erro ao buscar cotação ${fromCurrency}->${toCurrency} do DB:`, rateError.message);
-      // Do not throw here, proceed to fallback
+      console.error(`Erro ao buscar cotação ${fromCurrency}->${toCurrency} do DB (hoje):`, rateError.message);
     }
 
     if (rateData && rateData.rate) {
@@ -43,16 +87,14 @@ export const getCurrencyExchangeRate = async (fromCurrency, toCurrency = 'BRL') 
       return rateData.rate;
     }
 
-    // 3. External fetching and saving to DB is REMOVED for this iteration.
-    console.warn(`Cotação externa para ${fromCurrency} -> ${toCurrency} não implementada nesta versão. Buscando fallback.`);
-
-    // 4. Fallback: tentar buscar cotação mais recente na base (qualquer data)
+    // 3. Fallback: tentar buscar cotação mais recente na base (qualquer data ANTERIOR a hoje)
+    // This is a general fallback if today's rate isn't available.
     const { data: fallbackRateData, error: fallbackError } = await supabase
       .from('exchange_rates')
-      .select('rate, source, rate_date')
+      .select('rate, rate_date')
       .eq('from_currency', fromCurrency)
       .eq('to_currency', toCurrency)
-      // .is('user_id', null) // Example for global rates
+      .lt('rate_date', today) // Ensure we only look for past dates if today's is not available
       .order('rate_date', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -62,25 +104,32 @@ export const getCurrencyExchangeRate = async (fromCurrency, toCurrency = 'BRL') 
     }
     
     if (fallbackRateData && fallbackRateData.rate) {
-      console.log(`Usando cotação mais recente (${fallbackRateData.rate_date}) como fallback: ${fallbackRateData.rate} (Fonte: ${fallbackRateData.source})`);
-      // Cache this fallback but maybe with a different, non-today key or shorter expiry if cache had TTL
+      console.log(`Usando cotação mais recente (${fallbackRateData.rate_date}) como fallback para ${fromCurrency}->${toCurrency}: ${fallbackRateData.rate}`);
+      // Cache this fallback with a specific key indicating it's a general fallback, not for "today"
       memoryCache.set(`${fromCurrency}_${toCurrency}_fallback_${fallbackRateData.rate_date}`, fallbackRateData.rate);
       return fallbackRateData.rate;
     }
     
-    console.warn(`Nenhuma cotação encontrada para ${fromCurrency} -> ${toCurrency}. Usando taxa 1.`);
+    console.warn(`Nenhuma cotação encontrada para ${fromCurrency} -> ${toCurrency} (nem hoje, nem anterior). Usando taxa 1.`);
     return 1; // Último recurso
 
-  } catch (error) { // Catch unexpected errors from the overall try block
+  } catch (error) {
     console.error(`Erro geral ao buscar cotação ${fromCurrency} para ${toCurrency}:`, error.message);
-    return 1; // Último recurso
+    return 1;
   }
 };
 
-export const convertCurrency = async (amount, fromCurrency, toCurrency = 'BRL') => {
+// This function will now use getHistoricalExchangeRate when a targetDate is provided
+export const convertCurrency = async (amount, fromCurrency, toCurrency = 'BRL', targetDate = null) => {
   if (fromCurrency === toCurrency) return amount;
   
-  const rate = await getCurrencyExchangeRate(fromCurrency, toCurrency);
+  let rate;
+  if (targetDate) {
+    rate = await getHistoricalExchangeRate(fromCurrency, targetDate, toCurrency);
+  } else {
+    // Fallback to current/latest rate if no specific date is given for conversion
+    rate = await getCurrencyExchangeRate(fromCurrency, toCurrency);
+  }
   return amount * rate;
 };
 

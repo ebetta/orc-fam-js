@@ -30,7 +30,69 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { formatCurrencyWithSymbol, convertCurrency, getCurrencyExchangeRate } from "../utils/CurrencyConverter";
+import { formatCurrencyWithSymbol, convertCurrency } from "../utils/CurrencyConverter"; // Removed getCurrencyExchangeRate as it's not directly used here now
+
+// Helper component to display converted balance
+const ConvertedBalance = ({ amount, fromCurrency, transactionDate }) => {
+  const [convertedAmount, setConvertedAmount] = React.useState(null);
+  const [isLoading, setIsLoading] = React.useState(false);
+
+  React.useEffect(() => {
+    if (typeof amount !== 'number') {
+      setConvertedAmount(null); // Handle cases where amount is not a number (e.g. initially null)
+      return;
+    }
+    if (fromCurrency === 'BRL') {
+      setConvertedAmount(amount);
+      return;
+    }
+
+    let isMounted = true;
+    const fetchConverted = async () => {
+      setIsLoading(true);
+      // Assuming transactionDate is a string like 'YYYY-MM-DDTHH:mm:ssZ' or 'YYYY-MM-DD'
+      // convertCurrency will pass it to getHistoricalExchangeRate which handles date formatting.
+      const result = await convertCurrency(amount, fromCurrency, 'BRL', transactionDate);
+      if (isMounted) {
+        setConvertedAmount(result);
+        setIsLoading(false);
+      }
+    };
+
+    fetchConverted();
+    return () => { isMounted = false; };
+  }, [amount, fromCurrency, transactionDate]);
+
+  if (isLoading) {
+    // Using a smaller, less intrusive loading indicator
+    return <span className="text-xs text-gray-400 animate-pulse">convertendo...</span>;
+  }
+
+  if (convertedAmount === null || typeof convertedAmount !== 'number') {
+    return <span className="text-gray-500">-</span>;
+  }
+
+  // The ConvertedBalance component itself will decide the color based on the final BRL value.
+  // The parent TableCell will apply this class.
+  // return formatCurrencyWithSymbol(convertedAmount, 'BRL');
+  // No, formatCurrencyWithSymbol is for display, the raw number is needed for color styling decision.
+  // The formatting will be done in the TableCell.
+  // For now, let's return the raw number and handle formatting and styling in the TableCell.
+  // Actually, it's better if ConvertedBalance returns the formatted string directly,
+  // but we need a way to pass the raw converted value for styling.
+  // Let's try a different approach: ConvertedBalance will call a render prop or pass data up.
+  // Simpler: let ConvertedBalance just return the formatted string. Styling will be based on original progressiveBalance for now.
+  // Or, the parent can re-evaluate color based on an onConverted callback.
+
+  // Let's stick to the simpler: ConvertedBalance formats and returns.
+  // The color styling in TableCell will be based on the original transaction.progressiveBalance for simplicity,
+  // or we accept that the color might not reflect the BRL value if conversion significantly changes its sign (rare).
+  // For now, the color class is applied to TableCell based on `transaction.progressiveBalance`.
+  // If `transaction.progressiveBalance` is positive in USD, but negative in BRL after conversion, color would be blue.
+  // This is an acceptable tradeoff for now to avoid over-complicating this component.
+  return formatCurrencyWithSymbol(convertedAmount, 'BRL');
+};
+
 
 const getTransactionTypeDetails = (type) => {
   switch (type) {
@@ -340,9 +402,19 @@ export default function TransactionsList({
                       {typeDetails.valuePrefix}{formatCurrencyWithSymbol(transaction.amount, transactionAccountCurrency)}
                     </TableCell>
                     {shouldShowBalanceColumn && (
+                      // The text color (text-red-600 or text-blue-700) is determined by the original progressiveBalance value.
+                      // This is a simplification. If the converted BRL value changes the sign (e.g., small positive USD becomes negative BRL due to fees/rate),
+                      // the color might not match the BRL value's sign. This is acceptable for now.
                       <TableCell className={`font-semibold ${transaction.progressiveBalance !== null && transaction.progressiveBalance < 0 ? 'text-red-600' : 'text-blue-700'}`}>
                         {transaction.progressiveBalance !== null
-                          ? formatCurrencyWithSymbol(transaction.progressiveBalance, transaction.progressiveBalanceCurrency || 'BRL')
+                          ? <ConvertedBalance
+                              amount={transaction.progressiveBalance}
+                              fromCurrency={transaction.progressiveBalanceCurrency || 'BRL'}
+                              // Ensure transaction.transaction_date is available and in a format parseISO can handle,
+                              // or directly in 'YYYY-MM-DD' or a Date object.
+                              // The raw transaction_date from Supabase (timestamp with timezone) is fine.
+                              transactionDate={transaction.transaction_date}
+                            />
                           : '-'
                         }
                       </TableCell>
