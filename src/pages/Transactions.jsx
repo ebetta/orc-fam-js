@@ -7,21 +7,22 @@ import { supabase } from "@/lib/supabaseClient"; // Added
 import { motion } from "framer-motion";
 import { useToast } from "@/components/ui/use-toast";
 
+// ADICIONAR ESTE IMPORT
+import { convertCurrency } from "../components/utils/CurrencyConverter";
+
 import TransactionsHeader from "../components/transactions/TransactionsHeader";
 import TransactionForm from "../components/transactions/TransactionForm";
 import TransactionsList from "../components/transactions/TransactionsList";
 import PeriodSummary from "../components/transactions/PeriodSummary";
 
 // Helper function to calculate progressive balances
-const calculateProgressiveBalances = (
-  transactionsToDisplay, // Already ordered newest to oldest, and with currency mapped
-  allSystemTransactions, // All transactions from the user, for historical calculation
+// TORNAR A FUNÇÃO ASYNC
+const calculateProgressiveBalances = async (
+  transactionsToDisplay,
+  allSystemTransactions,
   accounts,
   filters
 ) => {
-  // Ensure transactionsToDisplay is what we expect (paginated, currency mapped)
-  // Ensure allSystemTransactions is the full list from state (e.g., state.transactions)
-
   if (filters.tagId !== 'all' || !accounts.length || !transactionsToDisplay.length) {
     return transactionsToDisplay.map(t => ({
       ...t,
@@ -30,14 +31,12 @@ const calculateProgressiveBalances = (
     }));
   }
 
-  const transactionsWithBalances = transactionsToDisplay.map(t => ({ ...t })); // Deep clone array of objects
+  const transactionsWithBalances = transactionsToDisplay.map(t => ({ ...t }));
 
-  // Step 1: Calculate Saldo da Primeira Linha (Mais Recente na Visualização)
   const firstTxInView = transactionsWithBalances[0];
   let balanceAfterFirstTx = 0;
-  let currencyForBalance = 'BRL';
+  let currencyForBalance = 'BRL'; // Default para BRL quando todas as contas
 
-  // Sort all transactions chronologically (oldest first) for initial balance calculation
   const allTransactionsChronological = [...allSystemTransactions]
     .sort((a, b) => {
       const dateA = new Date(a.transaction_date.replace(/-/g, '/')).getTime();
@@ -52,9 +51,6 @@ const calculateProgressiveBalances = (
       balanceAfterFirstTx = parseFloat(selectedAccount.initial_balance || 0);
       currencyForBalance = selectedAccount.currency || 'BRL';
       for (const t of allTransactionsChronological) {
-        // IMPORTANT: The t.account_id and t.destination_account_id here are after the
-        // _base44 mapping. They MUST be comparable with filters.accountId (which comes from accounts.id).
-        // If accounts.id is UUID and transaction IDs become base44, comparisons will fail.
         const amount = parseFloat(t.amount);
         if (t.account_id === filters.accountId) {
           if (t.transaction_type === "income") balanceAfterFirstTx += amount;
@@ -67,44 +63,91 @@ const calculateProgressiveBalances = (
       }
     }
   } else { // All accounts
-    balanceAfterFirstTx = accounts.reduce((sum, acc) => sum + parseFloat(acc.initial_balance || 0), 0);
-    currencyForBalance = 'BRL';
+    // MODIFICAÇÃO PRINCIPAL AQUI
+    let totalInitialBalanceInBRL = 0;
+    for (const acc of accounts) {
+      const initialBalance = parseFloat(acc.initial_balance || 0);
+      if (acc.currency === 'BRL') {
+        totalInitialBalanceInBRL += initialBalance;
+      } else {
+        // Usa a data atual para a cotação do saldo inicial, pois não é histórico de transação
+        // Passar null como data usará a cotação mais recente.
+        const convertedBalance = await convertCurrency(initialBalance, acc.currency, 'BRL', null);
+        totalInitialBalanceInBRL += convertedBalance;
+      }
+    }
+    balanceAfterFirstTx = totalInitialBalanceInBRL;
+    currencyForBalance = 'BRL'; // Já é BRL
+
     for (const t of allTransactionsChronological) {
       const amount = parseFloat(t.amount);
-      if (t.transaction_type === "income") balanceAfterFirstTx += amount;
-      else if (t.transaction_type === "expense") balanceAfterFirstTx -= amount;
-      // Internal transfers are neutral for "all accounts" sum
+      // Garantir que account_id em 't' seja o ID da conta de origem da transação
+      const accountForTransaction = accounts.find(a => a.id === t.account_id);
+      const transactionCurrency = accountForTransaction?.currency || 'BRL';
+
+      let amountInBRL = amount;
+
+      if (transactionCurrency !== 'BRL') {
+        // Para o impacto da transação no saldo total em BRL, converter o valor da transação para BRL
+        // usando a data da transação.
+        amountInBRL = await convertCurrency(amount, transactionCurrency, 'BRL', t.transaction_date);
+      }
+
+      if (t.transaction_type === "income") balanceAfterFirstTx += amountInBRL;
+      else if (t.transaction_type === "expense") balanceAfterFirstTx -= amountInBRL;
+      // Transferências internas entre contas monitoradas não alteram o saldo total em BRL
+      // (valor sai de uma conta em BRL e entra em outra em BRL, ou moedas diferentes que se anulam quando convertidas)
+      // Esta lógica assume que ambas as contas de uma transferência são parte do sistema.
+      // Se uma transferência é para uma conta externa, ela se comporta como uma despesa.
+      // A lógica atual não distingue transferências internas de externas explicitamente aqui.
+      // Para "All accounts", uma transferência entre duas contas suas é neutra para o patrimônio total.
       if (t.id === firstTxInView.id) break;
     }
   }
   transactionsWithBalances[0].progressiveBalance = balanceAfterFirstTx;
-  transactionsWithBalances[0].progressiveBalanceCurrency = currencyForBalance;
+  transactionsWithBalances[0].progressiveBalanceCurrency = currencyForBalance; // Será BRL para "all accounts"
 
-  // Step 2: Calculate Saldo das Linhas Subsequentes
   for (let i = 1; i < transactionsWithBalances.length; i++) {
     const prevTx = transactionsWithBalances[i-1];
     const currentTx = transactionsWithBalances[i];
-    let saldoLinhaAnterior = prevTx.progressiveBalance;
+    let saldoLinhaAnterior = prevTx.progressiveBalance; // Este já estará em BRL se currencyForBalance for BRL
     let efeitoInversoTxAnterior = 0;
     const amountPrevTx = parseFloat(prevTx.amount);
+    // prevTx.currency é a moeda da transação (da conta de origem)
+    const prevTxCurrency = prevTx.currency; // Adicionado em transactionsForDisplay
 
-    // Again, prevTx.account_id and prevTx.destination_account_id must be comparable with filters.accountId
+    let amountPrevTxInCalculatedCurrency = amountPrevTx;
+
+    if (currencyForBalance === 'BRL' && prevTxCurrency !== 'BRL') {
+      // Se o saldo progressivo é BRL, o efeito da transação anterior também deve ser BRL
+      // A conversão deve usar a data da transação anterior
+      amountPrevTxInCalculatedCurrency = await convertCurrency(amountPrevTx, prevTxCurrency, 'BRL', prevTx.transaction_date);
+    } else if (currencyForBalance !== 'BRL' && prevTxCurrency !== currencyForBalance) {
+      // Cenário mais complexo: saldo progressivo numa moeda X, transação numa moeda Y.
+      // Para simplificar, isso não deveria acontecer se a conta específica for selecionada,
+      // pois prevTxCurrency deveria ser igual a currencyForBalance.
+      // Se estamos em "all accounts", currencyForBalance é BRL, e este caso é tratado acima.
+      // Este console.log é para pegar casos inesperados.
+      console.warn("Caso de moeda não tratado no cálculo regressivo:", currencyForBalance, prevTxCurrency);
+    }
+
+
     if (filters.accountId !== "all") {
       const selectedId = filters.accountId;
-      if (prevTx.account_id === selectedId) { // Tx anterior foi da conta selecionada
-        if (prevTx.transaction_type === 'income') efeitoInversoTxAnterior = -amountPrevTx;
-        else if (prevTx.transaction_type === 'expense') efeitoInversoTxAnterior = +amountPrevTx;
-        else if (prevTx.transaction_type === 'transfer') efeitoInversoTxAnterior = +amountPrevTx; // Transferência de SAÍDA
-      } else if (prevTx.destination_account_id === selectedId && prevTx.transaction_type === 'transfer') { // Transferência de ENTRADA
-        efeitoInversoTxAnterior = -amountPrevTx;
+      if (prevTx.account_id === selectedId) {
+        if (prevTx.transaction_type === 'income') efeitoInversoTxAnterior = -amountPrevTxInCalculatedCurrency;
+        else if (prevTx.transaction_type === 'expense') efeitoInversoTxAnterior = +amountPrevTxInCalculatedCurrency;
+        else if (prevTx.transaction_type === 'transfer') efeitoInversoTxAnterior = +amountPrevTxInCalculatedCurrency;
+      } else if (prevTx.destination_account_id === selectedId && prevTx.transaction_type === 'transfer') {
+        efeitoInversoTxAnterior = -amountPrevTxInCalculatedCurrency;
       }
-    } else { // Todas as Contas
-      if (prevTx.transaction_type === 'income') efeitoInversoTxAnterior = -amountPrevTx;
-      else if (prevTx.transaction_type === 'expense') efeitoInversoTxAnterior = +amountPrevTx;
-      // For 'transfer' in "All Accounts", an internal transfer has zero net effect, so efeitoInversoTxAnterior remains 0.
+    } else { // Todas as Contas (currencyForBalance é BRL)
+      if (prevTx.transaction_type === 'income') efeitoInversoTxAnterior = -amountPrevTxInCalculatedCurrency;
+      else if (prevTx.transaction_type === 'expense') efeitoInversoTxAnterior = +amountPrevTxInCalculatedCurrency;
+      // Transferências internas são neutras para o saldo total em BRL.
     }
     currentTx.progressiveBalance = saldoLinhaAnterior + efeitoInversoTxAnterior;
-    currentTx.progressiveBalanceCurrency = prevTx.progressiveBalanceCurrency;
+    currentTx.progressiveBalanceCurrency = prevTx.progressiveBalanceCurrency; // Mantém BRL
   }
   return transactionsWithBalances;
 };
@@ -115,14 +158,18 @@ export default function TransactionsPage() {
   const [accounts, setAccounts] = useState([]);
   const [tags, setTags] = useState([]);
   
-  const [isLoading, setIsLoading] = useState(true);
+  // NOVO ESTADO para transações processadas com saldo progressivo
+  const [processedTransactions, setProcessedTransactions] = useState([]);
+  // NOVO ESTADO para controlar o carregamento do cálculo de saldo
+  const [isCalculatingBalances, setIsCalculatingBalances] = useState(false);
+
+  const [isLoading, setIsLoading] = useState(true); // Loading inicial de dados
   const [showForm, setShowForm] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
   const { toast } = useToast();
 
-  // Estados de paginação
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(20); // 20 transações por página
+  const [itemsPerPage] = useState(20);
 
   const [filters, setFilters] = useState({
     type: "all",
@@ -132,26 +179,25 @@ export default function TransactionsPage() {
     searchTerm: ""
   });
 
-  // Verificar se há parâmetros de URL ao carregar a página
   useEffect(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const accountIdFromUrl = urlParams.get('accountId');
     const tagIdFromUrl = urlParams.get('tagId');
-    const periodFromUrl = urlParams.get('periodFrom');
-    const periodToUrl = urlParams.get('periodTo');
+    const periodFromUrl = urlParams.get('periodFrom'); // Adicionado
+    const periodToUrl = urlParams.get('periodTo'); // Adicionado
     
-    if (accountIdFromUrl || tagIdFromUrl || periodFromUrl || periodToUrl) {
+    if (accountIdFromUrl || tagIdFromUrl || periodFromUrl || periodToUrl) { // Adicionado periodFromUrl e periodToUrl
       setFilters(prev => ({
         ...prev,
         accountId: accountIdFromUrl || prev.accountId,
         tagId: tagIdFromUrl || prev.tagId,
-        period: {
+        period: { // Adicionado
           from: periodFromUrl || prev.period.from,
           to: periodToUrl || prev.period.to
         }
       }));
     }
-  }, []); // Empty dependency array means it runs once on mount.
+  }, []);
 
   const loadInitialData = useCallback(async () => {
     setIsLoading(true);
@@ -176,10 +222,6 @@ export default function TransactionsPage() {
       const rawTransactions = transactionsResponse.data || [];
       const mappedTransactions = rawTransactions.map(t => ({
         ...t,
-        // This mapping prioritizes _base44 if it exists.
-        // For balance calculations to be correct, filters.accountId (from accounts.id)
-        // MUST use the same ID format that results from this mapping.
-        // If accounts.id are UUIDs and _base44 fields are different, comparisons will fail.
         account_id: t.account_id_base44 || t.account_id,
         tag_id: t.tag_id_base44 || t.tag_id,
         destination_account_id: t.destination_account_id_base44 || t.destination_account_id,
@@ -204,7 +246,6 @@ export default function TransactionsPage() {
     loadInitialData();
   }, [loadInitialData]);
 
-  // Resetar para primeira página quando filtros mudarem
   useEffect(() => {
     setCurrentPage(1);
   }, [filters]);
@@ -234,7 +275,7 @@ export default function TransactionsPage() {
       });
       setShowForm(false);
       setEditingTransaction(null);
-      loadInitialData();
+      loadInitialData(); // Recarrega todos os dados, o que acionará o useEffect de cálculo de saldo
     } catch (error) {
       console.error("Erro ao salvar transação:", error);
       toast({
@@ -266,7 +307,7 @@ export default function TransactionsPage() {
         title: "Transação Excluída!",
         description: `A transação "${transactionToDelete.description}" foi excluída.`,
       });
-      loadInitialData();
+      loadInitialData(); // Recarrega todos os dados
     } catch (error) {
       console.error("Erro ao excluir transação:", error);
       toast({
@@ -281,58 +322,83 @@ export default function TransactionsPage() {
     setEditingTransaction(null);
   };
 
-  const filteredTransactions = transactions.filter(transaction => {
-    const typeMatch = filters.type === "all" || transaction.transaction_type === filters.type;
-    const accountMatch = filters.accountId === "all" || 
-                         transaction.account_id === filters.accountId || 
-                         transaction.destination_account_id === filters.accountId;
-    const tagMatch = filters.tagId === "all" || transaction.tag_id === filters.tagId;
-    
-    const transactionDate = new Date(transaction.transaction_date.replace(/-/g, '/'));
-    transactionDate.setHours(0,0,0,0);
+  const filteredTransactions = useMemo(() => {
+    return transactions.filter(transaction => {
+      const typeMatch = filters.type === "all" || transaction.transaction_type === filters.type;
+      const accountMatch = filters.accountId === "all" ||
+                           transaction.account_id === filters.accountId ||
+                           (transaction.transaction_type === 'transfer' && transaction.destination_account_id === filters.accountId);
+      const tagMatch = filters.tagId === "all" || transaction.tag_id === filters.tagId;
 
-    let periodMatch = true;
-    if (filters.period.from) {
-        const fromDate = new Date(filters.period.from.replace(/-/g, '/'));
-        fromDate.setHours(0,0,0,0);
-        periodMatch = periodMatch && transactionDate >= fromDate;
-    }
-    if (filters.period.to) {
-        const toDate = new Date(filters.period.to.replace(/-/g, '/'));
-        toDate.setHours(0,0,0,0);
-        periodMatch = periodMatch && transactionDate <= toDate;
-    }
-    
-    const searchTermMatch = filters.searchTerm === "" || 
-      transaction.description.toLowerCase().includes(filters.searchTerm.toLowerCase()) ||
-      (accounts.find(a => a.id === transaction.account_id)?.name.toLowerCase().includes(filters.searchTerm.toLowerCase())) ||
-      (tags.find(t => t.id === transaction.tag_id)?.name.toLowerCase().includes(filters.searchTerm.toLowerCase()));
+      const transactionDateStr = transaction.transaction_date.split('T')[0];
+      const transactionDate = new Date(transactionDateStr + "T00:00:00"); // Normalize to start of day in local timezone
 
-    return typeMatch && accountMatch && tagMatch && periodMatch && searchTermMatch;
-  });
+      let periodMatch = true;
+      if (filters.period.from) {
+          const fromDateStr = filters.period.from.split('T')[0];
+          const fromDate = new Date(fromDateStr + "T00:00:00");
+          periodMatch = periodMatch && transactionDate >= fromDate;
+      }
+      if (filters.period.to) {
+          const toDateStr = filters.period.to.split('T')[0];
+          const toDate = new Date(toDateStr + "T00:00:00");
+          periodMatch = periodMatch && transactionDate <= toDate;
+      }
+
+      const searchTermMatch = filters.searchTerm === "" ||
+        transaction.description.toLowerCase().includes(filters.searchTerm.toLowerCase()) ||
+        (accounts.find(a => a.id === transaction.account_id)?.name.toLowerCase().includes(filters.searchTerm.toLowerCase())) ||
+        (tags.find(t => t.id === transaction.tag_id)?.name.toLowerCase().includes(filters.searchTerm.toLowerCase()));
+
+      return typeMatch && accountMatch && tagMatch && periodMatch && searchTermMatch;
+    });
+  }, [transactions, filters, accounts, tags]);
+
 
   const totalItems = filteredTransactions.length;
   const totalPages = Math.ceil(totalItems / itemsPerPage);
   const startIndex = (currentPage - 1) * itemsPerPage;
   const endIndex = startIndex + itemsPerPage;
-  const paginatedTransactions = filteredTransactions.slice(startIndex, endIndex);
+
+  const paginatedTransactions = useMemo(() => {
+    return filteredTransactions.slice(startIndex, endIndex);
+  }, [filteredTransactions, startIndex, endIndex]);
+
 
   const accountCurrencyMap = useMemo(() => new Map(accounts.map(acc => [acc.id, acc.currency])), [accounts]);
 
   const transactionsForDisplay = useMemo(() => {
     return paginatedTransactions.map(t => ({
       ...t,
-      // t.account_id here is after _base44 mapping from loadInitialData
-      // It's crucial that accountCurrencyMap uses the same ID format for lookup.
-      // (accounts.id from loadInitialData should match the format of t.account_id after mapping)
       currency: accountCurrencyMap.get(t.account_id) || 'BRL'
     }));
   }, [paginatedTransactions, accountCurrencyMap]);
 
-  const transactionsWithProgressiveBalance = useMemo(() => {
-    // `transactions` (full list from state) is passed as `allSystemTransactions`
-    return calculateProgressiveBalances(transactionsForDisplay, transactions, accounts, filters);
-  }, [transactionsForDisplay, transactions, accounts, filters]);
+  useEffect(() => {
+    if (transactionsForDisplay.length > 0 && accounts.length > 0 && !isLoading) { // Adicionado !isLoading
+      setIsCalculatingBalances(true);
+      calculateProgressiveBalances(transactionsForDisplay, transactions, accounts, filters)
+        .then(result => {
+          setProcessedTransactions(result);
+        })
+        .catch(error => {
+          console.error("Erro ao calcular saldos progressivos:", error);
+          setProcessedTransactions(transactionsForDisplay.map(t => ({
+            ...t,
+            progressiveBalance: null,
+            progressiveBalanceCurrency: null,
+          })));
+        })
+        .finally(() => {
+          setIsCalculatingBalances(false);
+        });
+    } else if (transactionsForDisplay.length === 0 && !isLoading) { // Adicionado !isLoading
+      setProcessedTransactions([]);
+      setIsCalculatingBalances(false); // Garantir que pare de calcular se não houver transações
+    }
+  }, [transactionsForDisplay, transactions, accounts, filters, isLoading]); // Adicionado isLoading
+
+  const showLoadingState = isLoading || isCalculatingBalances;
 
   return (
     <div className="p-6 space-y-8 max-w-7xl mx-auto">
@@ -355,7 +421,6 @@ export default function TransactionsPage() {
         />
       </motion.div>
 
-      {/* Resumo do Período */}
       <PeriodSummary 
         transactions={filteredTransactions}
         filters={filters}
@@ -387,14 +452,13 @@ export default function TransactionsPage() {
         transition={{ duration: 0.5, delay: 0.2 }}
       >
         <TransactionsList
-          transactions={transactionsWithProgressiveBalance} // Pass the augmented transactions with progressive balance and currency info
+          transactions={processedTransactions}
           accounts={accounts}
           tags={tags}
-          isLoading={isLoading}
+          isLoading={showLoadingState}
           onEditTransaction={handleEditTransaction}
           onDeleteTransaction={handleDeleteTransaction}
-          filters={filters} // Pass filters so TransactionsList can conditionally render the 'Saldo' column
-          // Propriedades de paginação
+          filters={filters}
           currentPage={currentPage}
           totalPages={totalPages}
           totalItems={totalItems}
