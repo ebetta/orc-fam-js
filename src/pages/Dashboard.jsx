@@ -170,9 +170,10 @@ export default function Dashboard() {
         transition={{ duration: 0.5, delay: 0.3 }}
       >
         <NetWorthCard 
-          netWorth={netWorth}
+          netWorth={netWorth} // Esta prop é ignorada para o cálculo principal no card
           accounts={accounts}
           isLoading={isLoading}
+          transactions={allTransactions} // Passando todas as transações
         />
       </motion.div>
 
