@@ -1,6 +1,6 @@
 
-npm install (aparentemente apena na primeira vez)
+# npm install (Apena na primeira vez)
 
-npm run build (Nao sei a diferença, por enaunto utilizar o de baixo)
+# npm run build (Para builda PRD)
 
 npm run dev
