@@ -119,7 +119,7 @@ export const getCurrencyExchangeRate = async (fromCurrency, toCurrency = 'BRL') 
     
     if (fallbackRateData && typeof fallbackRateData.rate === 'number') {
       console.log(`[getCurrencyExchangeRate] Taxa FALLBACK encontrada (${fallbackRateData.rate_date}): ${fallbackRateData.rate}. Cacheando (para ${cacheKey}) e retornando.`);
-      memoryCache.set(cacheKey, fallbackRateData.rate);
+      memoryCache.set(cacheKey, fallbackRateData.rate); 
       return fallbackRateData.rate;
     }
     
@@ -129,7 +129,7 @@ export const getCurrencyExchangeRate = async (fromCurrency, toCurrency = 'BRL') 
 
   } catch (error) {
     console.error(`[getCurrencyExchangeRate] Erro GERAL ao buscar cotação ${fromCurrency}->${toCurrency}:`, error.message);
-    return 1;
+    return 1; 
   }
 };
 
@@ -155,7 +155,7 @@ export const convertCurrency = async (amount, fromCurrency, toCurrency = 'BRL', 
     rate = await getCurrencyExchangeRate(fromCurrency, toCurrency);
   }
   console.log(`[convertCurrency] Taxa obtida para ${fromCurrency}->${toCurrency}: ${rate}`);
-
+  
   const convertedAmount = amount * rate;
   console.log(`[convertCurrency] Valor convertido: ${amount} * ${rate} = ${convertedAmount}`);
   return convertedAmount;
