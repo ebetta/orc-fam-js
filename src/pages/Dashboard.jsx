@@ -47,7 +47,15 @@ export default function Dashboard() {
         .select('*')
         .order('updated_at', { ascending: false });
       if (accountsError) console.error("Erro ao carregar contas:", accountsError);
-      setAccounts(accountsData || []);
+
+      const fetchedAccounts = accountsData || [];
+      const processedAccounts = fetchedAccounts.map(acc => ({
+        ...acc,
+        initial_balance: (acc.initial_balance === null || typeof acc.initial_balance === 'undefined' || isNaN(parseFloat(acc.initial_balance)))
+                         ? 0
+                         : parseFloat(acc.initial_balance)
+      }));
+      setAccounts(processedAccounts);
 
       // Fetch recent transactions
       const { data: recentTransactionsData, error: recentTransactionsError } = await supabase
