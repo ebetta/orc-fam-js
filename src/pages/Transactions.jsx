@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
+import { useSearchParams } from "react-router-dom"; // <<< ADICIONAR IMPORT
 // import { Transaction } from "@/api/entities"; // Removed
 // import { Account } from "@/api/entities"; // Removed
 // import { Tag } from "@/api/entities"; // Removed
@@ -168,6 +169,7 @@ export default function TransactionsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState(null);
   const { toast } = useToast();
+  const [searchParams] = useSearchParams(); // <<< USAR O HOOK
 
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage] = useState(20);
@@ -181,24 +183,30 @@ export default function TransactionsPage() {
   });
 
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const accountIdFromUrl = urlParams.get('accountId');
-    const tagIdFromUrl = urlParams.get('tagId');
-    const periodFromUrl = urlParams.get('periodFrom'); // Adicionado
-    const periodToUrl = urlParams.get('periodTo'); // Adicionado
-    
-    if (accountIdFromUrl || tagIdFromUrl || periodFromUrl || periodToUrl) { // Adicionado periodFromUrl e periodToUrl
-      setFilters(prev => ({
-        ...prev,
-        accountId: accountIdFromUrl || prev.accountId,
-        tagId: tagIdFromUrl || prev.tagId,
-        period: { // Adicionado
-          from: periodFromUrl || prev.period.from,
-          to: periodToUrl || prev.period.to
-        }
-      }));
-    }
-  }, []);
+    const accountIdFromUrl = searchParams.get('accountId');
+    const tagIdFromUrl = searchParams.get('tagId');
+    const periodFromUrl = searchParams.get('periodFrom');
+    const periodToUrl = searchParams.get('periodTo');
+
+    // Atualiza os filtros apenas se houver parâmetros na URL
+    // Isso também garante que, se os parâmetros forem removidos da URL,
+    // os filtros voltem para "all" ou o estado padrão, se desejado (requer lógica adicional se não for "all").
+    // A lógica atual mantém o filtro anterior se o parâmetro for removido,
+    // o que pode ser o comportamento desejado ou não.
+    // Para este caso, se accountIdFromUrl for null, ele manterá o prev.accountId.
+    // Se o objetivo é RESETAR o filtro quando o param some, a lógica seria:
+    // accountId: accountIdFromUrl || "all", (e similar para outros)
+
+    setFilters(prev => ({
+      ...prev,
+      accountId: accountIdFromUrl || prev.accountId, // Mantém o filtro se não estiver na URL, ou define se estiver
+      tagId: tagIdFromUrl || prev.tagId,
+      period: {
+        from: periodFromUrl || prev.period.from,
+        to: periodToUrl || prev.period.to
+      }
+    }));
+  }, [searchParams]); // <<< ADICIONAR searchParams COMO DEPENDÊNCIA
 
   const loadInitialData = useCallback(async () => {
     setIsLoading(true);
