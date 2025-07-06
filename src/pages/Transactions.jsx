@@ -14,6 +14,7 @@ import TransactionsHeader from "../components/transactions/TransactionsHeader";
 import TransactionForm from "../components/transactions/TransactionForm";
 import TransactionsList from "../components/transactions/TransactionsList";
 import PeriodSummary from "../components/transactions/PeriodSummary";
+import AccountBalancesSummary from "../components/transactions/AccountBalancesSummary"; // <<< ADICIONAR IMPORT
 
 // Helper function to calculate progressive balances
 // TORNAR A FUNÇÃO ASYNC
@@ -420,6 +421,17 @@ export default function TransactionsPage() {
           transactionsCount={totalItems}
         />
       </motion.div>
+
+      {/* Card de Saldos das Contas */}
+      {accounts && accounts.length > 0 && !isLoading && ( // Adicionado !isLoading para evitar renderização prematura
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.1 }} // Pequeno delay para escalonar a aparição
+        >
+          <AccountBalancesSummary accounts={accounts} />
+        </motion.div>
+      )}
 
       <PeriodSummary 
         transactions={filteredTransactions}
