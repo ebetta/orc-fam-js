@@ -15,32 +15,38 @@ const getProgressColor = (percentage) => {
   return 'var(--tw-color-green-500)';
 };
 
-export default function BudgetReport({ budgets, tags, isLoading, onClose, isPopup = false }) {
+export default function BudgetReport({ groupedBudgets, summaryTotals, tags, isLoading, onClose, isPopup = false }) {
      const reportData = React.useMemo(() => {
-        return budgets.map(b => {
-            const tag = tags.find(t => t.id === b.tag_id);
-            const orcado = b.amount || 0;
-            const gasto = b.spent_amount || 0;
-            const disponivel = orcado - gasto;
-            const percentual = orcado > 0 ? (gasto / orcado) * 100 : 0;
-            return {
-                ...b,
-                tagName: tag?.name || 'Tag Desconhecida',
-                tagColor: tag?.color || '#A1A1AA',
-                orcado,
-                gasto,
-                disponivel,
-                percentual
-            }
-        }).sort((a, b) => b.gasto - a.gasto);
-    }, [budgets, tags]);
-
-    const totals = reportData.reduce((acc, curr) => {
-        acc.orcado += curr.orcado;
-        acc.gasto += curr.gasto;
-        acc.disponivel += curr.disponivel;
-        return acc;
-    }, { orcado: 0, gasto: 0, disponivel: 0 });
+        const data = [];
+        groupedBudgets.forEach(group => {
+            data.push({
+                isGroupHeader: true,
+                id: group.parentTag.id,
+                name: group.parentTag.name,
+                color: group.parentTag.color,
+                groupTotalOrcado: group.groupTotalOrcado,
+                groupTotalGasto: group.groupTotalGasto,
+                groupTotalDisponivel: group.groupTotalDisponivel,
+            });
+            group.budgets.forEach(b => {
+                const orcado = b.total_budgeted_for_period || 0;
+                const gasto = b.spent_amount || 0;
+                const disponivel = orcado - gasto;
+                const percentual = orcado > 0 ? (gasto / orcado) * 100 : 0;
+                data.push({
+                    ...b,
+                    tagName: b.tagName,
+                    tagColor: b.tagColor,
+                    orcado,
+                    gasto,
+                    disponivel,
+                    percentual,
+                    isGroupHeader: false,
+                });
+            });
+        });
+        return data;
+    }, [groupedBudgets]);
 
     const handlePrint = () => {
         const printContent = document.getElementById('budget-report-content');
@@ -127,26 +133,40 @@ export default function BudgetReport({ budgets, tags, isLoading, onClose, isPopu
                         </TableHeader>
                         <TableBody>
                             {reportData.map(item => (
-                                <TableRow key={item.id}>
-                                    <TableCell>
-                                        <div className="font-medium flex items-center gap-2">
-                                            <span className="w-2.5 h-2.5 rounded-full tag-color" style={{backgroundColor: item.tagColor}}></span>
-                                            {item.tagName}
-                                        </div>
-                                        <Progress value={Math.min(item.percentual, 100)} className="h-1.5 mt-1" style={{'--progress-background': getProgressColor(item.percentual)}} />
-                                    </TableCell>
-                                    <TableCell className="text-right">{formatCurrency(item.orcado)}</TableCell>
-                                    <TableCell className={`text-right ${item.gasto > item.orcado ? 'text-red-600 font-medium' : ''}`}>{formatCurrency(item.gasto)}</TableCell>
-                                    <TableCell className={`text-right ${item.disponivel < 0 ? 'text-red-600 font-medium' : 'text-green-600'}`}>{formatCurrency(item.disponivel)}</TableCell>
-                                </TableRow>
+                                item.isGroupHeader ? (
+                                    <TableRow key={item.id} className="bg-gray-100 hover:bg-gray-100">
+                                        <TableCell colSpan="1" className="font-bold text-gray-700">
+                                            <div className="flex items-center gap-2">
+                                                <span className="w-3 h-3 rounded-full" style={{ backgroundColor: item.color }}></span>
+                                                {item.name}
+                                            </div>
+                                        </TableCell>
+                                        <TableCell className="text-right font-bold text-gray-700">{formatCurrency(item.groupTotalOrcado)}</TableCell>
+                                        <TableCell className="text-right font-bold text-gray-700">{formatCurrency(item.groupTotalGasto)}</TableCell>
+                                        <TableCell className={`text-right font-bold ${item.groupTotalDisponivel < 0 ? 'text-red-600' : 'text-green-600'}`}>{formatCurrency(item.groupTotalDisponivel)}</TableCell>
+                                    </TableRow>
+                                ) : (
+                                    <TableRow key={item.id}>
+                                        <TableCell className="pl-8">
+                                            <div className="font-medium flex items-center gap-2">
+                                                <span className="w-2.5 h-2.5 rounded-full tag-color" style={{ backgroundColor: item.tagColor }}></span>
+                                                {item.tagName}
+                                            </div>
+                                            <Progress value={Math.min(item.percentual, 100)} className="h-1.5 mt-1" style={{ '--progress-background': getProgressColor(item.percentual) }} />
+                                        </TableCell>
+                                        <TableCell className="text-right">{formatCurrency(item.orcado)}</TableCell>
+                                        <TableCell className={`text-right ${item.gasto > item.orcado ? 'text-red-600 font-medium' : ''}`}>{formatCurrency(item.gasto)}</TableCell>
+                                        <TableCell className={`text-right ${item.disponivel < 0 ? 'text-red-600 font-medium' : 'text-green-600'}`}>{formatCurrency(item.disponivel)}</TableCell>
+                                    </TableRow>
+                                )
                             ))}
                         </TableBody>
                         <TableFooter>
                             <TableRow className="bg-gray-50 hover:bg-gray-50 footer">
                                 <TableCell className="font-bold">Total Geral</TableCell>
-                                <TableCell className="text-right font-bold">{formatCurrency(totals.orcado)}</TableCell>
-                                <TableCell className="text-right font-bold">{formatCurrency(totals.gasto)}</TableCell>
-                                <TableCell className={`text-right font-bold ${totals.disponivel < 0 ? 'text-red-600' : 'text-green-600'}`}>{formatCurrency(totals.disponivel)}</TableCell>
+                                <TableCell className="text-right font-bold">{formatCurrency(summaryTotals.orcado)}</TableCell>
+                                <TableCell className="text-right font-bold">{formatCurrency(summaryTotals.gasto)}</TableCell>
+                                <TableCell className={`text-right font-bold ${summaryTotals.disponivel < 0 ? 'text-red-600' : 'text-green-600'}`}>{formatCurrency(summaryTotals.disponivel)}</TableCell>
                             </TableRow>
                         </TableFooter>
                     </Table>
