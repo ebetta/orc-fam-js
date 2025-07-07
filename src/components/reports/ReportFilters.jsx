@@ -123,7 +123,7 @@ export default function ReportFilters({ allTags, filters, onFiltersChange, onGen
                                 </PopoverContent>
                             </Popover>
 
-                            <Label className="font-semibold pt-4 block">Tipo de Relatório</Label>
+                            <Label className="font-semibold pt-8 block">Tipo de Relatório</Label>
                             <RadioGroup
                                 value={filters.reportType}
                                 onValueChange={(value) => onFiltersChange(prev => ({...prev, reportType: value}))}
@@ -152,7 +152,7 @@ export default function ReportFilters({ allTags, filters, onFiltersChange, onGen
                                     <Button variant="link" size="sm" onClick={() => handleSelectAllTags(false)}>Limpar</Button>
                                 </div>
                             </div>
-                            <ScrollArea className="h-48 w-full rounded-md border p-4">
+                            <ScrollArea className="h-[36rem] w-full rounded-md border p-4">
                                <div className="space-y-2">
                                 {hierarchicalTags.map(tag => (
                                     <div 
