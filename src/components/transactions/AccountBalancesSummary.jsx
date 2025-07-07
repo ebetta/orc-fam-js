@@ -163,10 +163,14 @@ export default function AccountBalancesSummary({ accounts }) {
         </CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {[...Array(3)].map((_, i) => (
-            <Card key={i} className="p-4">
-              <Skeleton className="h-6 w-3/4 mb-2" />
-              <Skeleton className="h-4 w-1/2 mb-1" />
-              <Skeleton className="h-8 w-1/2" />
+            <Card key={i} className="p-4 flex flex-col justify-between" style={{ minHeight: '110px' }}>
+              <div> {/* Skeleton para o título */}
+                <Skeleton className="h-6 w-3/4 mb-2" />
+              </div>
+              <div className="mt-auto pt-2"> {/* Skeleton para a área de valores */}
+                <Skeleton className="h-8 w-1/2 mb-1" />
+                <Skeleton className="h-4 w-1/3" />
+              </div>
             </Card>
           ))}
         </CardContent>
@@ -208,16 +212,16 @@ export default function AccountBalancesSummary({ accounts }) {
                   </h4>
                   <AccountIcon className="w-5 h-5 text-gray-400" />
                 </div>
-                {showOriginalBalance && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    ({formatCurrencyWithSymbol(account.original_balance, account.original_currency)})
-                  </p>
-                )}
               </div>
-              <div className="mt-2">
+              <div className="mt-auto pt-2"> {/* Use mt-auto para empurrar para baixo, pt-2 para espaço do título */}
                 <p className={`text-lg font-bold ${isNegative ? 'text-red-600' : 'text-gray-800'}`}>
                   {formatCurrencyWithSymbol(account.balance, account.currency)} {/* Saldo em BRL */}
                 </p>
+                {showOriginalBalance && (
+                  <p className="text-xs text-gray-500 mt-0.5"> {/* Ajuste de margem se necessário */}
+                    ({formatCurrencyWithSymbol(account.original_balance, account.original_currency)})
+                  </p>
+                )}
               </div>
             </motion.div>
           );
