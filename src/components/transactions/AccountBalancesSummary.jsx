@@ -1,81 +1,84 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { supabase } from "@/lib/supabaseClient";
 import { convertCurrency, formatCurrencyWithSymbol } from "@/components/utils/CurrencyConverter";
-import { Skeleton } from "@/components/ui/skeleton"; // Para feedback de carregamento
-import { motion } from "framer-motion"; // Importar motion
+import { Skeleton } from "@/components/ui/skeleton";
+import { motion } from "framer-motion";
+import {
+  Landmark, // Ícone para o card principal
+  CreditCard,
+  Wallet,
+  PiggyBank,
+  TrendingUp,
+  Banknote,
+} from "lucide-react";
 
-const calculateAccountBalance = async (account, allTransactions, accountsData, convertCurrencyFn) => {
-  let currentBalance = parseFloat(account.initial_balance) || 0;
+// Configuração dos ícones para tipos de conta (similar ao AccountsGrid)
+const accountTypeIcons = {
+  checking: Wallet,
+  savings: PiggyBank,
+  credit_card: CreditCard,
+  investment: TrendingUp,
+  cash: Banknote,
+  default: Wallet, // Ícone padrão
+};
+
+const calculateAccountBalanceAndDetails = async (account, allTransactions, accountsData, convertCurrencyFn) => {
+  let currentBalanceInAccountCurrency = parseFloat(account.initial_balance) || 0;
   const accountCurrency = account.currency;
 
-  // Mapeamento para buscar a moeda da conta de origem de uma transferência
   const accountCurrencyMap = new Map(accountsData.map(acc => [acc.id, acc.currency]));
 
   for (const transaction of allTransactions) {
     const transactionAmount = parseFloat(transaction.amount);
-    if (isNaN(transactionAmount)) continue; // Pular transação se o valor for inválido
+    if (isNaN(transactionAmount)) continue;
 
     let amountEffect = 0;
     let transactionConsidered = false;
 
-    // Lógica para transações normais (receita, despesa) e SAÍDA de transferência
     if (transaction.account_id === account.id) {
       transactionConsidered = true;
-      const transactionCurrency = accountCurrencyMap.get(transaction.account_id) || 'BRL'; // Moeda da transação (da conta de origem)
-
+      const transactionCurrency = accountCurrencyMap.get(transaction.account_id) || 'BRL';
       let amountInAccountCurrency = transactionAmount;
       if (transactionCurrency !== accountCurrency) {
-        // Converte o valor da transação para a moeda da conta ATUAL para cálculo do saldo
-        // Usa a data da transação para a cotação correta
         amountInAccountCurrency = await convertCurrencyFn(transactionAmount, transactionCurrency, accountCurrency, transaction.transaction_date);
       }
-
-      if (transaction.transaction_type === "income") {
-        amountEffect = amountInAccountCurrency;
-      } else if (transaction.transaction_type === "expense") {
-        amountEffect = -amountInAccountCurrency;
-      } else if (transaction.transaction_type === "transfer") {
-        // Saída da transferência
-        amountEffect = -amountInAccountCurrency;
-      }
-    }
-    // Lógica para ENTRADA de transferência
-    else if (transaction.destination_account_id === account.id && transaction.transaction_type === "transfer") {
+      if (transaction.transaction_type === "income") amountEffect = amountInAccountCurrency;
+      else if (transaction.transaction_type === "expense") amountEffect = -amountInAccountCurrency;
+      else if (transaction.transaction_type === "transfer") amountEffect = -amountInAccountCurrency;
+    } else if (transaction.destination_account_id === account.id && transaction.transaction_type === "transfer") {
       transactionConsidered = true;
-      // Para transferências recebidas, a transação é registrada na conta de origem.
-      // O 'amount' da transação está na moeda da conta de ORIGEM.
       const sourceAccountCurrency = accountCurrencyMap.get(transaction.account_id) || 'BRL';
-
       let amountInAccountCurrency = transactionAmount;
       if (sourceAccountCurrency !== accountCurrency) {
-        // Converte o valor da transferência (que está na moeda da conta de origem)
-        // para a moeda da conta de DESTINO (a conta atual)
-        // Usa a data da transação para a cotação correta
         amountInAccountCurrency = await convertCurrencyFn(transactionAmount, sourceAccountCurrency, accountCurrency, transaction.transaction_date);
       }
       amountEffect = amountInAccountCurrency;
     }
 
     if (transactionConsidered) {
-      currentBalance += amountEffect;
+      currentBalanceInAccountCurrency += amountEffect;
     }
   }
 
-  // Após calcular o saldo na moeda da conta, converter para BRL se necessário para exibição
+  let balanceInBRL = currentBalanceInAccountCurrency;
   if (accountCurrency !== "BRL") {
-    return await convertCurrencyFn(currentBalance, accountCurrency, "BRL", null); // null para taxa mais recente
+    balanceInBRL = await convertCurrencyFn(currentBalanceInAccountCurrency, accountCurrency, "BRL", null);
   }
 
-  return currentBalance;
+  return {
+    balanceInBRL, // Saldo final para exibição principal (sempre em BRL)
+    original_balance: currentBalanceInAccountCurrency, // Saldo na moeda original da conta
+    original_currency: accountCurrency, // Moeda original da conta
+    account_type: account.account_type, // Tipo da conta para o ícone
+  };
 };
 
 
 export default function AccountBalancesSummary({ accounts }) {
   const [accountBalances, setAccountBalances] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
-  // Não precisamos mais de allTransactions no estado do componente, pois será buscado dentro de calculateBalances
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -88,7 +91,6 @@ export default function AccountBalancesSummary({ accounts }) {
         return;
       }
 
-      // Buscar todas as transações uma única vez
       const { data: allTransactions, error: transactionsError } = await supabase
         .from("transactions")
         .select("*");
@@ -98,8 +100,11 @@ export default function AccountBalancesSummary({ accounts }) {
         setAccountBalances(accounts.map(acc => ({
           id: acc.id,
           name: acc.name,
-          balance: 0, // Ou algum valor de erro/fallback
-          currency: "BRL",
+          balance: 0,
+          currency: "BRL", // Exibição principal em BRL
+          original_balance: 0,
+          original_currency: acc.currency,
+          account_type: acc.account_type,
           error: "Erro ao calcular saldo"
         })));
         setIsLoading(false);
@@ -107,12 +112,15 @@ export default function AccountBalancesSummary({ accounts }) {
       }
 
       const balancesPromises = accounts.map(async (account) => {
-        const balance = await calculateAccountBalance(account, allTransactions || [], accounts, convertCurrency);
+        const details = await calculateAccountBalanceAndDetails(account, allTransactions || [], accounts, convertCurrency);
         return {
           id: account.id,
           name: account.name,
-          balance: balance,
-          currency: "BRL",
+          balance: details.balanceInBRL, // Para exibição principal
+          currency: "BRL", // Moeda da exibição principal
+          original_balance: details.original_balance,
+          original_currency: details.original_currency,
+          account_type: details.account_type,
         };
       });
 
@@ -122,12 +130,14 @@ export default function AccountBalancesSummary({ accounts }) {
         setAccountBalances(resolvedBalances);
       } catch (error) {
         console.error("Erro ao resolver promessas de cálculo de saldo:", error);
-        // Tratar erro de cálculo individual aqui se necessário
         setAccountBalances(accounts.map(acc => ({
           id: acc.id,
           name: acc.name,
           balance: 0,
           currency: "BRL",
+          original_balance: 0,
+          original_currency: acc.currency,
+          account_type: acc.account_type,
           error: "Erro no cálculo"
         })));
       } finally {
@@ -136,7 +146,7 @@ export default function AccountBalancesSummary({ accounts }) {
     };
 
     fetchAllDataAndCalculateBalances();
-  }, [accounts]); // Dependência apenas em 'accounts'
+  }, [accounts]);
 
   const handleAccountCardClick = (accountId) => {
     navigate(`/transactions?accountId=${accountId}`);
@@ -146,12 +156,16 @@ export default function AccountBalancesSummary({ accounts }) {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Saldo Atual das Contas</CardTitle>
+          <CardTitle className="flex items-center text-xl font-semibold text-gray-700">
+            <Landmark className="w-6 h-6 mr-3 text-blue-600" />
+            Saldo Atual das Contas
+          </CardTitle>
         </CardHeader>
         <CardContent className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-          {[...Array(3)].map((_, i) => ( // Mostrar 3 skeletons como placeholder
+          {[...Array(3)].map((_, i) => (
             <Card key={i} className="p-4">
               <Skeleton className="h-6 w-3/4 mb-2" />
+              <Skeleton className="h-4 w-1/2 mb-1" />
               <Skeleton className="h-8 w-1/2" />
             </Card>
           ))}
@@ -161,36 +175,53 @@ export default function AccountBalancesSummary({ accounts }) {
   }
 
   if (!accounts || accounts.length === 0) {
-    return null; // Não renderizar nada se não houver contas
+    return null;
   }
 
   return (
     <Card className="shadow-lg border-gray-200">
       <CardHeader>
-        <CardTitle className="text-xl font-semibold text-gray-700">Saldo Atual das Contas</CardTitle>
+        <CardTitle className="flex items-center text-xl font-semibold text-gray-700">
+          <Landmark className="w-6 h-6 mr-3 text-blue-600" /> {/* Ícone do Card Principal */}
+          Saldo Atual das Contas
+        </CardTitle>
       </CardHeader>
       <CardContent className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-        {accountBalances.map((account) => (
-          <motion.div
-            key={account.id}
-            whileHover={{ scale: 1.05, boxShadow: "0px 5px 15px rgba(0,0,0,0.1)" }}
-            whileTap={{ scale: 0.98 }}
-            className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm hover:shadow-md cursor-pointer flex flex-col justify-between h-full"
-            onClick={() => handleAccountCardClick(account.id)}
-            style={{ minHeight: '100px' }} // Garante uma altura mínima
-          >
-            <div>
-              <h4 className="text-md font-medium text-blue-600 truncate" title={account.name}>
-                {account.name}
-              </h4>
-            </div>
-            <div>
-              <p className="text-lg font-bold text-gray-800">
-                {formatCurrencyWithSymbol(account.balance, account.currency)}
-              </p>
-            </div>
-          </motion.div>
-        ))}
+        {accountBalances.map((account) => {
+          const AccountIcon = accountTypeIcons[account.account_type] || accountTypeIcons.default;
+          const isNegative = account.balance < 0;
+          const showOriginalBalance = account.original_currency !== "BRL";
+
+          return (
+            <motion.div
+              key={account.id}
+              whileHover={{ scale: 1.05, boxShadow: "0px 5px 15px rgba(0,0,0,0.1)" }}
+              whileTap={{ scale: 0.98 }}
+              className="bg-white rounded-lg p-4 border border-gray-200 shadow-sm hover:shadow-md cursor-pointer flex flex-col justify-between h-full"
+              onClick={() => handleAccountCardClick(account.id)}
+              style={{ minHeight: '110px' }} // Ajustar altura mínima se necessário
+            >
+              <div>
+                <div className="flex justify-between items-start">
+                  <h4 className="text-md font-medium text-blue-600 truncate pr-2" title={account.name}>
+                    {account.name}
+                  </h4>
+                  <AccountIcon className="w-5 h-5 text-gray-400" />
+                </div>
+                {showOriginalBalance && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    ({formatCurrencyWithSymbol(account.original_balance, account.original_currency)})
+                  </p>
+                )}
+              </div>
+              <div className="mt-2">
+                <p className={`text-lg font-bold ${isNegative ? 'text-red-600' : 'text-gray-800'}`}>
+                  {formatCurrencyWithSymbol(account.balance, account.currency)} {/* Saldo em BRL */}
+                </p>
+              </div>
+            </motion.div>
+          );
+        })}
       </CardContent>
     </Card>
   );
