@@ -1,6 +1,8 @@
- Sempre que for construir uma tela ou um novo complonente deverá seguir o estilo dos princípios do Material Design do Google com cartões com textura de papel, cores vibrantes e animações responsivas. Use sombras de elevação para indicar hierarquia e foco. Implemente um sistema de grade consistente com espaçamento e alinhamento adequados. Os botões devem ser planos, com efeitos de foco e animações em cascata ao clicar. Use as recomendações de fontes do Google e siga as diretrizes da paleta de cores do Material. Adicione transições sutis entre estados e microinterações responsivas.
+Sempre que for construir uma tela ou um novo complonente deverá seguir o estilo dos princípios do Material Design do Google com cartões com textura de papel, cores vibrantes e animações responsivas. Use sombras de elevação para indicar hierarquia e foco. Implemente um sistema de grade consistente com espaçamento e alinhamento adequados. Os botões devem ser planos, com efeitos de foco e animações em cascata ao clicar. Use as recomendações de fontes do Google e siga as diretrizes da paleta de cores do Material. Adicione transições sutis entre estados e microinterações responsivas.
+
+As paginas ou telas serão encontrado os fontes em src/pages
  
- A estrutura de dados do projeto está no Supabase e foram criadas fonforme abaixo:
+A estrutura de dados do projeto está no Supabase e foram criadas fonforme abaixo:
 create table public.accounts (
   id uuid not null default extensions.uuid_generate_v4 (),
   user_id uuid not null,
