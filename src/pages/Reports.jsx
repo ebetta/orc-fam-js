@@ -126,7 +126,10 @@ export default function ReportsPage() {
     const selectedTagIds = Object.keys(filters.selectedTags).filter(id => filters.selectedTags[id]);
     
     return allTransactions.filter(t => {
-      const transactionDate = new Date(t.transaction_date);
+      // Corrige o problema de fuso horário ao analisar a data
+      const [year, month, day] = t.transaction_date.split('-').map(Number);
+      const transactionDate = new Date(year, month - 1, day);
+
       const isAfterStart = !filters.period.from || transactionDate >= filters.period.from;
       const isBeforeEnd = !filters.period.to || transactionDate <= filters.period.to;
       const isTagSelected = selectedTagIds.includes(t.tag_id);

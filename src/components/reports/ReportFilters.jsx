@@ -17,13 +17,36 @@ export default function ReportFilters({ allTags, filters, onFiltersChange, onGen
     const { toast } = useToast();
 
     const handleTagChange = (tagId, checked) => {
-        onFiltersChange(prev => ({
-            ...prev,
-            selectedTags: {
+        const tagMap = {};
+        allTags.forEach(tag => {
+            tagMap[tag.id] = { ...tag, children: [] };
+        });
+
+        allTags.forEach(tag => {
+            if (tag.parent_tag_id && tagMap[tag.parent_tag_id]) {
+                tagMap[tag.parent_tag_id].children.push(tagMap[tag.id]);
+            }
+        });
+
+        const changedTag = tagMap[tagId];
+
+        onFiltersChange(prev => {
+            const newSelectedTags = {
                 ...prev.selectedTags,
                 [tagId]: checked
+            };
+
+            if (changedTag && changedTag.children.length > 0) {
+                changedTag.children.forEach(child => {
+                    newSelectedTags[child.id] = checked;
+                });
             }
-        }));
+
+            return {
+                ...prev,
+                selectedTags: newSelectedTags
+            };
+        });
     };
     
     const handleSelectAllTags = (select) => {
