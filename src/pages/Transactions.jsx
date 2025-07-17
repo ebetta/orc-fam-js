@@ -52,59 +52,82 @@ const calculateProgressiveBalances = async (
     if (selectedAccount) {
       balanceAfterFirstTx = parseFloat(selectedAccount.initial_balance || 0);
       currencyForBalance = selectedAccount.currency || 'BRL';
+      const accountCurrencyMap = new Map(accounts.map(acc => [acc.id, acc.currency || 'BRL']));
+
       for (const t of allTransactionsChronological) {
         const amount = parseFloat(t.amount);
-        if (t.account_id === filters.accountId) {
+        if (t.account_id === filters.accountId) { // Outgoing transaction
           if (t.transaction_type === "income") balanceAfterFirstTx += amount;
           else if (t.transaction_type === "expense") balanceAfterFirstTx -= amount;
           else if (t.transaction_type === "transfer") balanceAfterFirstTx -= amount;
-        } else if (t.transaction_type === "transfer" && t.destination_account_id === filters.accountId) {
-          balanceAfterFirstTx += amount;
+        } else if (t.transaction_type === "transfer" && t.destination_account_id === filters.accountId) { // Incoming transfer
+          const sourceCurrency = accountCurrencyMap.get(t.account_id);
+          const destCurrency = currencyForBalance;
+          if (sourceCurrency && sourceCurrency !== destCurrency) {
+            const convertedAmount = await convertCurrency(amount, sourceCurrency, destCurrency, t.transaction_date);
+            balanceAfterFirstTx += convertedAmount;
+          } else {
+            balanceAfterFirstTx += amount; // Same currency or source not found
+          }
         }
         if (t.id === firstTxInView.id) break;
       }
     }
   } else { // All accounts
-    // MODIFICAÇÃO PRINCIPAL AQUI
-    let totalInitialBalanceInBRL = 0;
+    const initialBalances = new Map();
     for (const acc of accounts) {
-      const initialBalance = parseFloat(acc.initial_balance || 0);
-      if (acc.currency === 'BRL') {
-        totalInitialBalanceInBRL += initialBalance;
-      } else {
-        // Usa a data atual para a cotação do saldo inicial, pois não é histórico de transação
-        // Passar null como data usará a cotação mais recente.
-        const convertedBalance = await convertCurrency(initialBalance, acc.currency, 'BRL', null);
-        totalInitialBalanceInBRL += convertedBalance;
-      }
+        const balance = parseFloat(acc.initial_balance || 0);
+        const currency = acc.currency || 'BRL';
+        initialBalances.set(currency, (initialBalances.get(currency) || 0) + balance);
     }
-    balanceAfterFirstTx = totalInitialBalanceInBRL;
-    currencyForBalance = 'BRL'; // Já é BRL
+
+    const runningBalances = new Map(initialBalances);
+    const accountCurrencyMap = new Map(accounts.map(acc => [acc.id, acc.currency || 'BRL']));
 
     for (const t of allTransactionsChronological) {
-      const amount = parseFloat(t.amount);
-      // Garantir que account_id em 't' seja o ID da conta de origem da transação
-      const accountForTransaction = accounts.find(a => a.id === t.account_id);
-      const transactionCurrency = accountForTransaction?.currency || 'BRL';
+        const amount = parseFloat(t.amount);
+        const sourceCurrency = accountCurrencyMap.get(t.account_id);
 
-      let amountInBRL = amount;
+        if (!sourceCurrency) {
+            if (t.id === firstTxInView.id) break;
+            continue;
+        }
 
-      if (transactionCurrency !== 'BRL') {
-        // Para o impacto da transação no saldo total em BRL, converter o valor da transação para BRL
-        // usando a data da transação.
-        amountInBRL = await convertCurrency(amount, transactionCurrency, 'BRL', t.transaction_date);
-      }
+        if (t.transaction_type === "income") {
+            runningBalances.set(sourceCurrency, (runningBalances.get(sourceCurrency) || 0) + amount);
+        } else if (t.transaction_type === "expense") {
+            runningBalances.set(sourceCurrency, (runningBalances.get(sourceCurrency) || 0) - amount);
+        } else if (t.transaction_type === "transfer") {
+            const destCurrency = accountCurrencyMap.get(t.destination_account_id);
+            
+            if (destCurrency) {
+                runningBalances.set(sourceCurrency, (runningBalances.get(sourceCurrency) || 0) - amount);
+                if (sourceCurrency === destCurrency) {
+                    runningBalances.set(destCurrency, (runningBalances.get(destCurrency) || 0) + amount);
+                } else {
+                    const convertedAmount = await convertCurrency(amount, sourceCurrency, destCurrency, t.transaction_date);
+                    runningBalances.set(destCurrency, (runningBalances.get(destCurrency) || 0) + convertedAmount);
+                }
+            }
+        }
 
-      if (t.transaction_type === "income") balanceAfterFirstTx += amountInBRL;
-      else if (t.transaction_type === "expense") balanceAfterFirstTx -= amountInBRL;
-      // Transferências internas entre contas monitoradas não alteram o saldo total em BRL
-      // (valor sai de uma conta em BRL e entra em outra em BRL, ou moedas diferentes que se anulam quando convertidas)
-      // Esta lógica assume que ambas as contas de uma transferência são parte do sistema.
-      // Se uma transferência é para uma conta externa, ela se comporta como uma despesa.
-      // A lógica atual não distingue transferências internas de externas explicitamente aqui.
-      // Para "All accounts", uma transferência entre duas contas suas é neutra para o patrimônio total.
-      if (t.id === firstTxInView.id) break;
+        if (t.id === firstTxInView.id) break;
     }
+
+    let totalBalanceInBRL = 0;
+    const conversionDate = (filters.period.from || filters.period.to) ? firstTxInView.transaction_date : null;
+
+    for (const [currency, balance] of runningBalances.entries()) {
+        if (currency === 'BRL') {
+            totalBalanceInBRL += balance;
+        } else {
+            const convertedBalance = await convertCurrency(balance, currency, 'BRL', conversionDate);
+            totalBalanceInBRL += convertedBalance;
+        }
+    }
+
+    balanceAfterFirstTx = totalBalanceInBRL;
+    currencyForBalance = 'BRL';
   }
   transactionsWithBalances[0].progressiveBalance = balanceAfterFirstTx;
   transactionsWithBalances[0].progressiveBalanceCurrency = currencyForBalance; // Será BRL para "all accounts"
@@ -219,7 +242,7 @@ export default function TransactionsPage() {
       }
 
       const [transactionsResponse, accountsResponse, tagsResponse] = await Promise.all([
-        supabase.from('transactions').select('*').order('transaction_date', { ascending: false }).order('updated_at', { ascending: false }),
+        supabase.from('transactions').select('*').order('transaction_date', { ascending: false }).order('created_at', { ascending: false }).order('updated_at', { ascending: false }),
         supabase.from('accounts').select('*'),
         supabase.from('tags').select('*')
       ]);
@@ -384,11 +407,28 @@ export default function TransactionsPage() {
   }, [paginatedTransactions, accountCurrencyMap]);
 
   useEffect(() => {
-    if (transactionsForDisplay.length > 0 && accounts.length > 0 && !isLoading) { // Adicionado !isLoading
+    if (transactionsForDisplay.length > 0 && accounts.length > 0 && !isLoading) {
       setIsCalculatingBalances(true);
       calculateProgressiveBalances(transactionsForDisplay, transactions, accounts, filters)
-        .then(result => {
-          setProcessedTransactions(result);
+        .then(async (result) => {
+          const selectedAccount = accounts.find(acc => acc.id === filters.accountId);
+
+          if (selectedAccount && selectedAccount.currency !== 'BRL') {
+            const convertedResult = await Promise.all(result.map(async (tx) => {
+              if (tx.progressiveBalance !== null && tx.progressiveBalanceCurrency && tx.progressiveBalanceCurrency !== 'BRL') {
+                const balanceInBRL = await convertCurrency(tx.progressiveBalance, tx.progressiveBalanceCurrency, 'BRL', null);
+                return {
+                  ...tx,
+                  progressiveBalance: balanceInBRL,
+                  progressiveBalanceCurrency: 'BRL',
+                };
+              }
+              return tx;
+            }));
+            setProcessedTransactions(convertedResult);
+          } else {
+            setProcessedTransactions(result);
+          }
         })
         .catch(error => {
           console.error("Erro ao calcular saldos progressivos:", error);
@@ -401,11 +441,11 @@ export default function TransactionsPage() {
         .finally(() => {
           setIsCalculatingBalances(false);
         });
-    } else if (transactionsForDisplay.length === 0 && !isLoading) { // Adicionado !isLoading
+    } else if (transactionsForDisplay.length === 0 && !isLoading) {
       setProcessedTransactions([]);
-      setIsCalculatingBalances(false); // Garantir que pare de calcular se não houver transações
+      setIsCalculatingBalances(false);
     }
-  }, [transactionsForDisplay, transactions, accounts, filters, isLoading]); // Adicionado isLoading
+  }, [transactionsForDisplay, transactions, accounts, filters, isLoading]);
 
   const showLoadingState = isLoading || isCalculatingBalances;
 
