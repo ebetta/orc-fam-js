@@ -5,8 +5,10 @@ import { Plus, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 import { createPageUrl } from "@/utils";
 import { motion } from "framer-motion";
+import { useUser } from "@/pages/Layout.jsx";
 
-export default function WelcomeCard({ user }) {
+export default function WelcomeCard() {
+  const user = useUser();
   const currentHour = new Date().getHours();
   let greeting = "Boa noite";
   
@@ -38,7 +40,7 @@ export default function WelcomeCard({ user }) {
               transition={{ duration: 0.5, delay: 0.1 }}
               className="text-3xl font-bold mb-2"
             >
-              {user?.full_name || "Usuário"}
+              {user?.user_metadata?.full_name || "Usuário"}
             </motion.h1>
             <motion.p 
               initial={{ opacity: 0, y: 10 }}

@@ -20,7 +20,7 @@ export default function Dashboard() {
   const [transactions, setTransactions] = useState([]);
   const [allTransactions, setAllTransactions] = useState([]);
   const [tags, setTags] = useState([]);
-  const [user, setUser] = useState(null);
+  
   const [isLoading, setIsLoading] = useState(true);
   const { preloadExchangeRates } = useCurrencyConversion();
 
@@ -30,11 +30,7 @@ export default function Dashboard() {
     // However, the `user` state here was from Base44 User.me(). Supabase user is handled by Layout.
     // We can get it from supabase.auth.getUser() if needed by WelcomeCard.
     // For now, let's fetch Supabase user data for the WelcomeCard.
-    const fetchCurrentUser = async () => {
-      const { data: { user: currentUser } } = await supabase.auth.getUser();
-      setUser(currentUser); // This sets the user for WelcomeCard
-    };
-    fetchCurrentUser();
+    
     loadDashboardData();
   }, []);
 
@@ -132,7 +128,7 @@ export default function Dashboard() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        <WelcomeCard user={user} />
+        <WelcomeCard />
       </motion.div>
       
       {/* Grid para os dois gráficos principais */}

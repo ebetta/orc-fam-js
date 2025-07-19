@@ -1,6 +1,6 @@
 
 
-import React from "react";
+import React, { createContext, useContext } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom"; // Added useNavigate
 import { createPageUrl } from "@/utils";
 import { 
@@ -33,6 +33,10 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 // import { User as UserEntity } from "@/api/entities"; // Remove Base44 User entity
 import { supabase } from "@/lib/supabaseClient"; // Import Supabase client
+
+const UserContext = createContext(null);
+
+export const useUser = () => useContext(UserContext);
 
 const navigationItems = [
   {
@@ -239,7 +243,9 @@ export default function Layout({ children, currentPageName }) {
 
           <div className="flex-1 overflow-auto bg-gray-50">
             <div className="min-h-full">
-              {children}
+              <UserContext.Provider value={user}>
+                {children}
+              </UserContext.Provider>
             </div>
           </div>
         </main>
