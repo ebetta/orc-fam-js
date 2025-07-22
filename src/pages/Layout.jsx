@@ -156,13 +156,11 @@ export default function Layout({ children, currentPageName }) {
         `}</style>
         
         <Sidebar className="border-r-0 shadow-md bg-white">
-          <SidebarHeader className="border-b border-gray-100 p-6">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-green-500 to-green-700 rounded-xl flex items-center justify-center shadow-lg">
-                <TrendingUp className="w-6 h-6 text-white" />
-              </div>
-              <div>
-                <h2 className="font-bold text-xl text-gray-900">FinanceApp</h2>
+          <SidebarHeader className="border-b border-gray-100 p-4">
+            <div className="flex flex-col items-center text-center">
+              <img src="/src/assets/ico-orc-fam.png" alt="Orçamento Familiar" className="w-24 h-24" />
+              <div className="-mt-2">
+                <h2 className="font-bold text-lg text-[#2775bd]">Orçamento Familiar</h2>
                 <p className="text-sm text-gray-500">Controle Financeiro</p>
               </div>
             </div>
@@ -237,7 +235,7 @@ export default function Layout({ children, currentPageName }) {
           <header className="bg-white border-b border-gray-100 px-6 py-4 md:hidden shadow-sm">
             <div className="flex items-center gap-4">
               <SidebarTrigger className="hover:bg-gray-100 p-2 rounded-lg transition-colors duration-200" />
-              <h1 className="text-xl font-bold text-gray-900">FinanceApp</h1>
+              <h1 className="text-xl font-bold text-gray-900">Orçamento Familiar</h1>
             </div>
           </header>
 
