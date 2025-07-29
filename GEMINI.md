@@ -2,7 +2,7 @@ Sempre que for construir uma tela ou um novo complonente deverá seguir o estilo
 
 As paginas ou telas serão encontrado os fontes em src/pages
  
-A estrutura de dados do projeto está no Supabase e foram criadas fonforme abaixo:
+A estrutura de dados do projeto está no Supabase e foram criadas conforme abaixo:
 create table public.accounts (
   id uuid not null default extensions.uuid_generate_v4 (),
   user_id uuid not null,
