@@ -13,7 +13,8 @@ import {
   Menu,
   // User, // User icon from lucide-react, might conflict with User state
   Settings,
-  LogOut
+  LogOut,
+  Upload
 } from "lucide-react";
 import {
   Sidebar,
@@ -73,6 +74,13 @@ const navigationItems = [
     icon: TrendingUp,
     color: "text-indigo-600",
     bgColor: "bg-indigo-50"
+  },
+  {
+    title: "Importar",
+    url: createPageUrl("Import"),
+    icon: Upload,
+    color: "text-cyan-600",
+    bgColor: "bg-cyan-50"
   },
   {
     title: "Relatórios",

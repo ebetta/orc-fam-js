@@ -5,6 +5,7 @@ import Tags from "./Tags";
 import Transactions from "./Transactions";
 import Budgets from "./Budgets";
 import Reports from "./Reports";
+import Import from "./Import";
 import LoginPage from "./Login.jsx"; // Import the new Login page
 
 import { BrowserRouter as Router, Route, Routes, useLocation, Navigate } from 'react-router-dom';
@@ -91,6 +92,7 @@ function PagesContent() {
                 <Route path="/Transactions" element={<ProtectedRoute><Transactions /></ProtectedRoute>} />
                 <Route path="/Budgets" element={<ProtectedRoute><Budgets /></ProtectedRoute>} />
                 <Route path="/Reports" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+                <Route path="/Import" element={<ProtectedRoute><Import /></ProtectedRoute>} />
                 {/* LoginPage is handled outside Layout to prevent sidebar/header on login screen */}
             </Routes>
         </Layout>
