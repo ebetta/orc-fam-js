@@ -8,14 +8,10 @@ import { createPageUrl } from "@/utils";
 import { convertCurrency, useCurrencyConversion } from "../utils/CurrencyConverter";
 // import { useToast } from "@/components/ui/use-toast";
 
-export default function NetWorthCard({ netWorth, accounts, isLoading, transactions }) { // Adicionada prop transactions
+export default function NetWorthCard({ accounts, isLoading }) {
   const navigate = useNavigate();
   const [convertedNetWorth, setConvertedNetWorth] = useState(0);
-  const { isLoading: isConverting, preloadExchangeRates: preloadRatesFromHook } = useCurrencyConversion();
-  // const { toast } = useToast();
-
-  // Log inicial de props ao renderizar ou quando props mudam
-  console.log('[NetWorthCard] Props recebidas:', { netWorth, accounts, isLoading, transactions });
+  const { isLoading: isConverting, preloadExchangeRates } = useCurrencyConversion();
 
   const formatCurrency = (amount) => {
     return new Intl.NumberFormat('pt-BR', {
@@ -25,97 +21,54 @@ export default function NetWorthCard({ netWorth, accounts, isLoading, transactio
   };
 
   useEffect(() => {
-    console.log('[NetWorthCard useEffect] Iniciando. Props atuais:', { isLoadingProp: isLoading, accountsProp: accounts, netWorthProp: netWorth });
-    const localPreloadExchangeRates = preloadRatesFromHook;
-
     const calculateConvertedNetWorth = async () => {
-      console.log('[NetWorthCard calculateConvertedNetWorth] Iniciando cálculo.');
-      // A guarda agora também pode verificar transactions se for essencial para o cálculo
-      if (isLoading || !accounts?.length /* || !transactions?.length */) { // Adicionar !transactions?.length se for crítico
-        console.log('[NetWorthCard calculateConvertedNetWorth] Condição de guarda atingida:', { isLoading, hasAccounts: !!accounts?.length, hasTransactions: !!transactions?.length });
+      if (isLoading || !accounts?.length) {
         setConvertedNetWorth(0);
         return;
       }
-      
+
+      // Preload exchange rates for foreign currencies
       const uniqueCurrencies = [...new Set(accounts.map(acc => acc.currency || 'BRL'))];
       const foreignCurrencies = uniqueCurrencies.filter(curr => curr !== 'BRL');
-      console.log('[NetWorthCard calculateConvertedNetWorth] Moedas estrangeiras para preload:', foreignCurrencies);
-      
       if (foreignCurrencies.length > 0) {
         try {
-            console.log('[NetWorthCard calculateConvertedNetWorth] Preloading rates...');
-            await localPreloadExchangeRates(foreignCurrencies);
-            console.log('[NetWorthCard calculateConvertedNetWorth] Preloading rates concluído.');
+          await preloadExchangeRates(foreignCurrencies);
         } catch (preloadError) {
-            console.error('[NetWorthCard calculateConvertedNetWorth] Erro durante preloadExchangeRates:', preloadError);
-            // Continuar mesmo se o preload falhar, convertCurrency tentará buscar individualmente.
+          console.error('Erro durante preloadExchangeRates:', preloadError);
         }
       }
 
       let totalInBRL = 0;
 
       try {
-        console.log('[NetWorthCard calculateConvertedNetWorth] Processando contas:', accounts.filter(acc => acc.is_active !== false));
         const conversionPromises = accounts
           .filter(acc => acc.is_active !== false)
-          .map(async (account, index) => {
-            console.log(`[NetWorthCard map account ${index}] Conta:`, account);
-
-            // Calcular saldo atual da conta
-            let currentAccountBalance = parseFloat(account.initial_balance); // Já tratado para ser 0 se null/NaN no Dashboard.jsx
-            if (isNaN(currentAccountBalance)) currentAccountBalance = 0; // Segurança adicional
-
-            const accountCurrency = account.currency || 'BRL';
-            console.log(`[NetWorthCard map account ${index}] Saldo Inicial Processado: ${currentAccountBalance}, Moeda: ${accountCurrency}`);
-
-            if (transactions && transactions.length > 0) {
-              transactions.forEach(t => {
-                // Não precisamos filtrar por data aqui, pois queremos o saldo ATUAL
-                const amount = parseFloat(t.amount || 0);
-                if (t.account_id === account.id) { // Transação originada desta conta
-                  if (t.transaction_type === 'income') currentAccountBalance += amount;
-                  else if (t.transaction_type === 'expense') currentAccountBalance -= amount;
-                  else if (t.transaction_type === 'transfer') currentAccountBalance -= amount; // Saída por transferência
-                }
-                if (t.destination_account_id === account.id) { // Transação destinada a esta conta
-                  if (t.transaction_type === 'transfer') currentAccountBalance += amount; // Entrada por transferência
-                }
-              });
-            }
-            console.log(`[NetWorthCard map account ${index}] Saldo Atual (após transações): ${currentAccountBalance}`);
+          .map(async (account) => {
+            const balance = account.current_balance ?? account.initial_balance ?? 0;
+            const currency = account.currency || 'BRL';
             
-            if (accountCurrency === 'BRL') {
-              console.log(`[NetWorthCard map account ${index}] Moeda BRL, retornando saldo atual: ${currentAccountBalance}`);
-              return currentAccountBalance;
-            } else {
-              console.log(`[NetWorthCard map account ${index}] Convertendo ${currentAccountBalance} ${accountCurrency} para BRL...`);
-              const convertedBalance = await convertCurrency(currentAccountBalance, accountCurrency, 'BRL');
-              console.log(`[NetWorthCard map account ${index}] Convertido para BRL: ${convertedBalance}`);
-              return convertedBalance;
+            const convertedBalance = await convertCurrency(balance, currency, 'BRL');
+
+            // Credit cards are liabilities, so their absolute value should always be subtracted
+            if (account.account_type === 'credit_card') {
+              return -Math.abs(convertedBalance);
             }
+            return convertedBalance;
           });
 
         const convertedBalances = await Promise.all(conversionPromises);
-        console.log('[NetWorthCard calculateConvertedNetWorth] Saldos convertidos (array):', convertedBalances);
-
-        totalInBRL = convertedBalances.reduce((sum, balance) => {
-            const currentVal = balance || 0;
-            console.log(`[NetWorthCard reduce] sum: ${sum}, currentVal: ${currentVal}`);
-            return sum + currentVal;
-        }, 0);
-        console.log('[NetWorthCard calculateConvertedNetWorth] Total em BRL (após reduce):', totalInBRL);
+        
+        totalInBRL = convertedBalances.reduce((sum, balance) => sum + balance, 0);
         
         setConvertedNetWorth(totalInBRL);
       } catch (error) {
-        console.error('[NetWorthCard calculateConvertedNetWorth] Erro ao converter patrimônio líquido:', error);
+        console.error('Erro ao converter patrimônio líquido:', error);
         setConvertedNetWorth(0);
-        // toast({ title: "Erro ao calcular patrimônio", description: "Não foi possível converter todos os valores.", variant: "destructive" });
       }
     };
 
     calculateConvertedNetWorth();
-  // Adicionar transactions às dependências
-  }, [accounts, isLoading, preloadRatesFromHook, transactions]);
+  }, [accounts, isLoading, preloadExchangeRates]);
 
   const activeAccounts = accounts ? accounts.filter(acc => acc.is_active !== false) : [];
   const totalAccounts = activeAccounts.length;

@@ -62,12 +62,10 @@ export default function Dashboard() {
       if (recentTransactionsError) console.error("Erro ao carregar transações recentes:", recentTransactionsError);
       setTransactions(recentTransactionsData || []);
 
-      // Fetch all transactions for charts (up to 500)
       const { data: allTransactionsData, error: allTransactionsError } = await supabase
         .from('transactions')
         .select('*')
-        .order('transaction_date', { ascending: false })
-        .limit(500);
+        .order('transaction_date', { ascending: false });
       if (allTransactionsError) console.error("Erro ao carregar todas as transações:", allTransactionsError);
       setAllTransactions(allTransactionsData || []);
       
@@ -166,10 +164,8 @@ export default function Dashboard() {
         transition={{ duration: 0.5, delay: 0.3 }}
       >
         <NetWorthCard 
-          netWorth={netWorth} // Esta prop é ignorada para o cálculo principal no card
           accounts={accounts}
           isLoading={isLoading}
-          transactions={allTransactions} // Passando todas as transações
         />
       </motion.div>
 

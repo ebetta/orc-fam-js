@@ -84,13 +84,28 @@ export default function PatrimonyEvolutionChart({ accounts, transactions, isLoad
 
             accountTransactions.forEach(t => {
               const amount = parseFloat(t.amount || 0);
-              if (t.account_id === account.id) {
-                if (t.transaction_type === 'income') accountBalanceAtMonthEnd += amount;
-                else if (t.transaction_type === 'expense') accountBalanceAtMonthEnd -= amount;
-                else if (t.transaction_type === 'transfer') accountBalanceAtMonthEnd -= amount;
-              }
-              if (t.destination_account_id === account.id) {
-                if (t.transaction_type === 'transfer') accountBalanceAtMonthEnd += amount;
+
+              if (account.account_type === 'credit_card') {
+                // For credit cards, expenses increase the balance (liability)
+                if (t.account_id === account.id) {
+                  if (t.transaction_type === 'income') accountBalanceAtMonthEnd -= amount; // Payment to the card
+                  else if (t.transaction_type === 'expense') accountBalanceAtMonthEnd += amount; // Purchase
+                  else if (t.transaction_type === 'transfer') accountBalanceAtMonthEnd += amount; // Cash advance
+                }
+                // A transfer TO a credit card is likely a payment or refund
+                if (t.destination_account_id === account.id) {
+                  if (t.transaction_type === 'transfer') accountBalanceAtMonthEnd -= amount;
+                }
+              } else {
+                // Original logic for asset accounts
+                if (t.account_id === account.id) {
+                  if (t.transaction_type === 'income') accountBalanceAtMonthEnd += amount;
+                  else if (t.transaction_type === 'expense') accountBalanceAtMonthEnd -= amount;
+                  else if (t.transaction_type === 'transfer') accountBalanceAtMonthEnd -= amount;
+                }
+                if (t.destination_account_id === account.id) {
+                  if (t.transaction_type === 'transfer') accountBalanceAtMonthEnd += amount;
+                }
               }
             });
 
@@ -101,10 +116,15 @@ export default function PatrimonyEvolutionChart({ accounts, transactions, isLoad
               'BRL'
             );
             
-            monthNetWorthInBRL += accountBalanceInBRL;
+            // Credit cards are liabilities, so their absolute value should be subtracted
+            if (account.account_type === 'credit_card') {
+              monthNetWorthInBRL -= Math.abs(accountBalanceInBRL);
+            } else {
+              monthNetWorthInBRL += accountBalanceInBRL;
+            }
 
             // Pequena pausa para não sobrecarregar as conversões
-            await new Promise(resolve => setTimeout(resolve, 50));
+            await new Promise(resolve => setTimeout(resolve, 10));
           }
           
           data.push({
