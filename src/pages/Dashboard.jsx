@@ -11,13 +11,13 @@ import { useCurrencyConversion } from "../components/utils/CurrencyConverter";
 import WelcomeCard from "../components/dashboard/WelcomeCard";
 import NetWorthCard from "../components/dashboard/NetWorthCard";
 import AccountsList from "../components/dashboard/AccountsList";
-import RecentTransactions from "../components/dashboard/RecentTransactions";
+
 import ExpensesChart from "../components/dashboard/ExpensesChart";
 import PatrimonyEvolutionChart from "../components/dashboard/PatrimonyEvolutionChart";
 
 export default function Dashboard() {
   const [accounts, setAccounts] = useState([]);
-  const [transactions, setTransactions] = useState([]);
+
   const [allTransactions, setAllTransactions] = useState([]);
   const [tags, setTags] = useState([]);
   
@@ -53,14 +53,7 @@ export default function Dashboard() {
       }));
       setAccounts(processedAccounts);
 
-      // Fetch recent transactions
-      const { data: recentTransactionsData, error: recentTransactionsError } = await supabase
-        .from('transactions')
-        .select('*')
-        .order('transaction_date', { ascending: false })
-        .limit(5);
-      if (recentTransactionsError) console.error("Erro ao carregar transações recentes:", recentTransactionsError);
-      setTransactions(recentTransactionsData || []);
+
 
       const { data: allTransactionsData, error: allTransactionsError } = await supabase
         .from('transactions')
@@ -169,8 +162,8 @@ export default function Dashboard() {
         />
       </motion.div>
 
-      {/* Grid para Lista de Contas e Transações Recentes */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {/* Grid para Lista de Contas */}
+      <div className="grid grid-cols-1 gap-6">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
@@ -178,17 +171,6 @@ export default function Dashboard() {
         >
           <AccountsList 
             groupedAccounts={groupedAccounts}
-            isLoading={isLoading}
-          />
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.5 }}
-        >
-          <RecentTransactions 
-            transactions={transactions}
             isLoading={isLoading}
           />
         </motion.div>

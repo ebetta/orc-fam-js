@@ -8,7 +8,7 @@ import { createPageUrl } from "@/utils";
 import { convertCurrency, useCurrencyConversion } from "../utils/CurrencyConverter";
 // import { useToast } from "@/components/ui/use-toast";
 
-export default function NetWorthCard({ accounts, isLoading }) {
+export default function NetWorthCard({ accounts, isLoading, customNetWorth }) {
   const navigate = useNavigate();
   const [convertedNetWorth, setConvertedNetWorth] = useState(0);
   const { isLoading: isConverting, preloadExchangeRates } = useCurrencyConversion();
@@ -22,6 +22,11 @@ export default function NetWorthCard({ accounts, isLoading }) {
 
   useEffect(() => {
     const calculateConvertedNetWorth = async () => {
+      if (customNetWorth !== undefined && customNetWorth !== null) {
+        setConvertedNetWorth(customNetWorth);
+        return;
+      }
+
       if (isLoading || !accounts?.length) {
         setConvertedNetWorth(0);
         return;
@@ -46,7 +51,7 @@ export default function NetWorthCard({ accounts, isLoading }) {
           .map(async (account) => {
             const balance = account.current_balance ?? account.initial_balance ?? 0;
             const currency = account.currency || 'BRL';
-            
+
             const convertedBalance = await convertCurrency(balance, currency, 'BRL');
 
             // Credit cards are liabilities, so their absolute value should always be subtracted
@@ -57,9 +62,9 @@ export default function NetWorthCard({ accounts, isLoading }) {
           });
 
         const convertedBalances = await Promise.all(conversionPromises);
-        
+
         totalInBRL = convertedBalances.reduce((sum, balance) => sum + balance, 0);
-        
+
         setConvertedNetWorth(totalInBRL);
       } catch (error) {
         console.error('Erro ao converter patrimônio líquido:', error);
@@ -68,7 +73,7 @@ export default function NetWorthCard({ accounts, isLoading }) {
     };
 
     calculateConvertedNetWorth();
-  }, [accounts, isLoading, preloadExchangeRates]);
+  }, [accounts, isLoading, preloadExchangeRates, customNetWorth]);
 
   const activeAccounts = accounts ? accounts.filter(acc => acc.is_active !== false) : [];
   const totalAccounts = activeAccounts.length;
@@ -95,7 +100,7 @@ export default function NetWorthCard({ accounts, isLoading }) {
           </div>
         </div>
       </CardHeader>
-      
+
       <CardContent className="p-8">
         {isLoading || isConverting ? (
           <div className="space-y-4">
@@ -116,7 +121,7 @@ export default function NetWorthCard({ accounts, isLoading }) {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
           >
-            <div 
+            <div
               className={`text-4xl font-bold mb-2 cursor-pointer hover:text-blue-600 transition-colors duration-200 ${convertedNetWorth < 0 ? 'text-red-600' : 'text-gray-900'}`}
               onClick={handleNetWorthClick}
               title="Clique para ver todas as transações"

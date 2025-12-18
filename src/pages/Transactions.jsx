@@ -10,12 +10,13 @@ import { useToast } from "@/components/ui/use-toast";
 
 // ADICIONAR ESTE IMPORT
 import { convertCurrency } from "../components/utils/CurrencyConverter";
+import { calculateAccountBalanceAndDetails } from "../utils/balanceUtils";
 
 import TransactionsHeader from "../components/transactions/TransactionsHeader";
 import TransactionForm from "../components/transactions/TransactionForm";
 import TransactionsList from "../components/transactions/TransactionsList";
 import PeriodSummary from "../components/transactions/PeriodSummary";
-import AccountBalancesSummary from "../components/transactions/AccountBalancesSummary"; // <<< ADICIONAR IMPORT
+import AccountBalancesSummary from "../components/transactions/AccountBalancesSummary";
 
 // Helper function to calculate progressive balances
 // TORNAR A FUNÇÃO ASYNC
@@ -76,54 +77,54 @@ const calculateProgressiveBalances = async (
   } else { // All accounts
     const initialBalances = new Map();
     for (const acc of accounts) {
-        const balance = parseFloat(acc.initial_balance || 0);
-        const currency = acc.currency || 'BRL';
-        initialBalances.set(currency, (initialBalances.get(currency) || 0) + balance);
+      const balance = parseFloat(acc.initial_balance || 0);
+      const currency = acc.currency || 'BRL';
+      initialBalances.set(currency, (initialBalances.get(currency) || 0) + balance);
     }
 
     const runningBalances = new Map(initialBalances);
     const accountCurrencyMap = new Map(accounts.map(acc => [acc.id, acc.currency || 'BRL']));
 
     for (const t of allTransactionsChronological) {
-        const amount = parseFloat(t.amount);
-        const sourceCurrency = accountCurrencyMap.get(t.account_id);
+      const amount = parseFloat(t.amount);
+      const sourceCurrency = accountCurrencyMap.get(t.account_id);
 
-        if (!sourceCurrency) {
-            if (t.id === firstTxInView.id) break;
-            continue;
-        }
-
-        if (t.transaction_type === "income") {
-            runningBalances.set(sourceCurrency, (runningBalances.get(sourceCurrency) || 0) + amount);
-        } else if (t.transaction_type === "expense") {
-            runningBalances.set(sourceCurrency, (runningBalances.get(sourceCurrency) || 0) - amount);
-        } else if (t.transaction_type === "transfer") {
-            const destCurrency = accountCurrencyMap.get(t.destination_account_id);
-            
-            if (destCurrency) {
-                runningBalances.set(sourceCurrency, (runningBalances.get(sourceCurrency) || 0) - amount);
-                if (sourceCurrency === destCurrency) {
-                    runningBalances.set(destCurrency, (runningBalances.get(destCurrency) || 0) + amount);
-                } else {
-                    const convertedAmount = await convertCurrency(amount, sourceCurrency, destCurrency, t.transaction_date);
-                    runningBalances.set(destCurrency, (runningBalances.get(destCurrency) || 0) + convertedAmount);
-                }
-            }
-        }
-
+      if (!sourceCurrency) {
         if (t.id === firstTxInView.id) break;
+        continue;
+      }
+
+      if (t.transaction_type === "income") {
+        runningBalances.set(sourceCurrency, (runningBalances.get(sourceCurrency) || 0) + amount);
+      } else if (t.transaction_type === "expense") {
+        runningBalances.set(sourceCurrency, (runningBalances.get(sourceCurrency) || 0) - amount);
+      } else if (t.transaction_type === "transfer") {
+        const destCurrency = accountCurrencyMap.get(t.destination_account_id);
+
+        if (destCurrency) {
+          runningBalances.set(sourceCurrency, (runningBalances.get(sourceCurrency) || 0) - amount);
+          if (sourceCurrency === destCurrency) {
+            runningBalances.set(destCurrency, (runningBalances.get(destCurrency) || 0) + amount);
+          } else {
+            const convertedAmount = await convertCurrency(amount, sourceCurrency, destCurrency, t.transaction_date);
+            runningBalances.set(destCurrency, (runningBalances.get(destCurrency) || 0) + convertedAmount);
+          }
+        }
+      }
+
+      if (t.id === firstTxInView.id) break;
     }
 
     let totalBalanceInBRL = 0;
     const conversionDate = (filters.period.from || filters.period.to) ? firstTxInView.transaction_date : null;
 
     for (const [currency, balance] of runningBalances.entries()) {
-        if (currency === 'BRL') {
-            totalBalanceInBRL += balance;
-        } else {
-            const convertedBalance = await convertCurrency(balance, currency, 'BRL', conversionDate);
-            totalBalanceInBRL += convertedBalance;
-        }
+      if (currency === 'BRL') {
+        totalBalanceInBRL += balance;
+      } else {
+        const convertedBalance = await convertCurrency(balance, currency, 'BRL', conversionDate);
+        totalBalanceInBRL += convertedBalance;
+      }
     }
 
     balanceAfterFirstTx = totalBalanceInBRL;
@@ -133,7 +134,7 @@ const calculateProgressiveBalances = async (
   transactionsWithBalances[0].progressiveBalanceCurrency = currencyForBalance; // Será BRL para "all accounts"
 
   for (let i = 1; i < transactionsWithBalances.length; i++) {
-    const prevTx = transactionsWithBalances[i-1];
+    const prevTx = transactionsWithBalances[i - 1];
     const currentTx = transactionsWithBalances[i];
     let saldoLinhaAnterior = prevTx.progressiveBalance; // Este já estará em BRL se currencyForBalance for BRL
     let efeitoInversoTxAnterior = 0;
@@ -182,11 +183,16 @@ export default function TransactionsPage() {
   const [transactions, setTransactions] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [tags, setTags] = useState([]);
-  
+
   // NOVO ESTADO para transações processadas com saldo progressivo
   const [processedTransactions, setProcessedTransactions] = useState([]);
   // NOVO ESTADO para controlar o carregamento do cálculo de saldo
   const [isCalculatingBalances, setIsCalculatingBalances] = useState(false);
+
+  // States for Net Worth and Account Balances on this page
+  const [calculatedAccountBalances, setCalculatedAccountBalances] = useState([]);
+  const [totalNetWorth, setTotalNetWorth] = useState(0);
+  const [isCalculatingNetWorth, setIsCalculatingNetWorth] = useState(true);
 
   const [isLoading, setIsLoading] = useState(true); // Loading inicial de dados
   const [showForm, setShowForm] = useState(false);
@@ -201,7 +207,7 @@ export default function TransactionsPage() {
     type: "all",
     accountId: "all",
     tagId: "all",
-    period: { from: null, to: null }, 
+    period: { from: null, to: null },
     searchTerm: ""
   });
 
@@ -358,8 +364,8 @@ export default function TransactionsPage() {
     return transactions.filter(transaction => {
       const typeMatch = filters.type === "all" || transaction.transaction_type === filters.type;
       const accountMatch = filters.accountId === "all" ||
-                           transaction.account_id === filters.accountId ||
-                           (transaction.transaction_type === 'transfer' && transaction.destination_account_id === filters.accountId);
+        transaction.account_id === filters.accountId ||
+        (transaction.transaction_type === 'transfer' && transaction.destination_account_id === filters.accountId);
       const tagMatch = filters.tagId === "all" || transaction.tag_id === filters.tagId;
 
       const transactionDateStr = transaction.transaction_date.split('T')[0];
@@ -367,14 +373,14 @@ export default function TransactionsPage() {
 
       let periodMatch = true;
       if (filters.period.from) {
-          const fromDateStr = filters.period.from.split('T')[0];
-          const fromDate = new Date(fromDateStr + "T00:00:00");
-          periodMatch = periodMatch && transactionDate >= fromDate;
+        const fromDateStr = filters.period.from.split('T')[0];
+        const fromDate = new Date(fromDateStr + "T00:00:00");
+        periodMatch = periodMatch && transactionDate >= fromDate;
       }
       if (filters.period.to) {
-          const toDateStr = filters.period.to.split('T')[0];
-          const toDate = new Date(toDateStr + "T00:00:00");
-          periodMatch = periodMatch && transactionDate <= toDate;
+        const toDateStr = filters.period.to.split('T')[0];
+        const toDate = new Date(toDateStr + "T00:00:00");
+        periodMatch = periodMatch && transactionDate <= toDate;
       }
 
       const searchTermMatch = filters.searchTerm === "" ||
@@ -447,6 +453,47 @@ export default function TransactionsPage() {
     }
   }, [transactionsForDisplay, transactions, accounts, filters, isLoading]);
 
+  // Calculate Account Balances and Net Worth for the summary cards
+  useEffect(() => {
+    const calculateSummaries = async () => {
+      if (isLoading || !accounts.length) {
+        setIsCalculatingNetWorth(false);
+        return;
+      }
+
+      setIsCalculatingNetWorth(true);
+
+      try {
+        const balancesPromises = accounts.map(async (account) => {
+          const details = await calculateAccountBalanceAndDetails(account, transactions || [], accounts, convertCurrency);
+          return {
+            id: account.id,
+            name: account.name,
+            balance: details.balanceInBRL,
+            currency: "BRL",
+            original_balance: details.original_balance,
+            original_currency: details.original_currency,
+            account_type: details.account_type,
+          };
+        });
+
+        const resolvedBalances = await Promise.all(balancesPromises);
+        resolvedBalances.sort((a, b) => a.name.localeCompare(b.name));
+        setCalculatedAccountBalances(resolvedBalances);
+
+        const netWorth = resolvedBalances.reduce((sum, acc) => sum + acc.balance, 0);
+        setTotalNetWorth(netWorth);
+
+      } catch (error) {
+        console.error("Error calculating summaries:", error);
+      } finally {
+        setIsCalculatingNetWorth(false);
+      }
+    };
+
+    calculateSummaries();
+  }, [accounts, transactions, isLoading]);
+
   const showLoadingState = isLoading || isCalculatingBalances;
 
   return (
@@ -470,18 +517,22 @@ export default function TransactionsPage() {
         />
       </motion.div>
 
-      {/* Card de Saldos das Contas */}
-      {accounts && accounts.length > 0 && !isLoading && ( // Adicionado !isLoading para evitar renderização prematura
+      {/* Card de Patrimônio Líquido e Saldos */}
+      {accounts && accounts.length > 0 && !isLoading && (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.1 }} // Pequeno delay para escalonar a aparição
+          transition={{ duration: 0.5, delay: 0.1 }}
         >
-          <AccountBalancesSummary accounts={accounts} />
+          <AccountBalancesSummary
+            accounts={accounts}
+            balances={calculatedAccountBalances}
+            totalNetWorth={totalNetWorth}
+          />
         </motion.div>
       )}
 
-      <PeriodSummary 
+      <PeriodSummary
         transactions={filteredTransactions}
         filters={filters}
       />
@@ -494,18 +545,18 @@ export default function TransactionsPage() {
           className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm z-40 flex justify-center items-center p-4 overflow-auto"
           onClick={handleCancelForm}
         >
-            <div onClick={e => e.stopPropagation()} className="w-full max-w-2xl">
-                 <TransactionForm
-                    transaction={editingTransaction}
-                    accounts={accounts.filter(acc => acc.is_active !== false)}
-                    tags={tags.filter(t => t.is_active !== false)}
-                    onSave={handleFormSubmit}
-                    onCancel={handleCancelForm}
-                />
-            </div>
+          <div onClick={e => e.stopPropagation()} className="w-full max-w-2xl">
+            <TransactionForm
+              transaction={editingTransaction}
+              accounts={accounts.filter(acc => acc.is_active !== false)}
+              tags={tags.filter(t => t.is_active !== false)}
+              onSave={handleFormSubmit}
+              onCancel={handleCancelForm}
+            />
+          </div>
         </motion.div>
       )}
-      
+
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}

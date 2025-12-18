@@ -24,59 +24,10 @@ const accountTypeIcons = {
   default: Wallet, // Ícone padrão
 };
 
-const calculateAccountBalanceAndDetails = async (account, allTransactions, accountsData, convertCurrencyFn) => {
-  let currentBalanceInAccountCurrency = parseFloat(account.initial_balance) || 0;
-  const accountCurrency = account.currency;
-
-  const accountCurrencyMap = new Map(accountsData.map(acc => [acc.id, acc.currency]));
-
-  for (const transaction of allTransactions) {
-    const transactionAmount = parseFloat(transaction.amount);
-    if (isNaN(transactionAmount)) continue;
-
-    let amountEffect = 0;
-    let transactionConsidered = false;
-
-    if (transaction.account_id === account.id) {
-      transactionConsidered = true;
-      const transactionCurrency = accountCurrencyMap.get(transaction.account_id) || 'BRL';
-      let amountInAccountCurrency = transactionAmount;
-      if (transactionCurrency !== accountCurrency) {
-        amountInAccountCurrency = await convertCurrencyFn(transactionAmount, transactionCurrency, accountCurrency, transaction.transaction_date);
-      }
-      if (transaction.transaction_type === "income") amountEffect = amountInAccountCurrency;
-      else if (transaction.transaction_type === "expense") amountEffect = -amountInAccountCurrency;
-      else if (transaction.transaction_type === "transfer") amountEffect = -amountInAccountCurrency;
-    } else if (transaction.destination_account_id === account.id && transaction.transaction_type === "transfer") {
-      transactionConsidered = true;
-      const sourceAccountCurrency = accountCurrencyMap.get(transaction.account_id) || 'BRL';
-      let amountInAccountCurrency = transactionAmount;
-      if (sourceAccountCurrency !== accountCurrency) {
-        amountInAccountCurrency = await convertCurrencyFn(transactionAmount, sourceAccountCurrency, accountCurrency, transaction.transaction_date);
-      }
-      amountEffect = amountInAccountCurrency;
-    }
-
-    if (transactionConsidered) {
-      currentBalanceInAccountCurrency += amountEffect;
-    }
-  }
-
-  let balanceInBRL = currentBalanceInAccountCurrency;
-  if (accountCurrency !== "BRL") {
-    balanceInBRL = await convertCurrencyFn(currentBalanceInAccountCurrency, accountCurrency, "BRL", null);
-  }
-
-  return {
-    balanceInBRL, // Saldo final para exibição principal (sempre em BRL)
-    original_balance: currentBalanceInAccountCurrency, // Saldo na moeda original da conta
-    original_currency: accountCurrency, // Moeda original da conta
-    account_type: account.account_type, // Tipo da conta para o ícone
-  };
-};
+import { calculateAccountBalanceAndDetails } from "@/utils/balanceUtils";
 
 
-export default function AccountBalancesSummary({ accounts }) {
+export default function AccountBalancesSummary({ accounts, balances, totalNetWorth }) {
   const [accountBalances, setAccountBalances] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const navigate = useNavigate();
@@ -84,6 +35,12 @@ export default function AccountBalancesSummary({ accounts }) {
   useEffect(() => {
     const fetchAllDataAndCalculateBalances = async () => {
       setIsLoading(true);
+
+      if (balances) {
+        setAccountBalances(balances);
+        setIsLoading(false);
+        return;
+      }
 
       if (!accounts || accounts.length === 0) {
         setAccountBalances([]);
@@ -146,7 +103,7 @@ export default function AccountBalancesSummary({ accounts }) {
     };
 
     fetchAllDataAndCalculateBalances();
-  }, [accounts]);
+  }, [accounts, balances]);
 
   const handleAccountCardClick = (accountId) => {
     navigate(`/transactions?accountId=${accountId}`);
@@ -185,10 +142,17 @@ export default function AccountBalancesSummary({ accounts }) {
   return (
     <Card className="shadow-lg border-gray-200">
       <CardHeader>
-        <CardTitle className="flex items-center text-xl font-semibold text-gray-700">
-          <Landmark className="w-6 h-6 mr-3 text-blue-600" /> {/* Ícone do Card Principal */}
-          Saldo Atual das Contas
-        </CardTitle>
+        <div className="flex justify-between items-center">
+          <CardTitle className="flex items-center text-xl font-semibold text-gray-700">
+            <Landmark className="w-6 h-6 mr-3 text-blue-600" /> {/* Ícone do Card Principal */}
+            Saldo Atual das Contas
+          </CardTitle>
+          {totalNetWorth !== undefined && (
+            <div className="text-xl font-bold text-gray-900">
+              {formatCurrencyWithSymbol(totalNetWorth, 'BRL')}
+            </div>
+          )}
+        </div>
       </CardHeader>
       <CardContent className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
         {accountBalances.map((account) => {
