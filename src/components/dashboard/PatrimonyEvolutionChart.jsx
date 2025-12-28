@@ -59,89 +59,147 @@ export default function PatrimonyEvolutionChart({ accounts, transactions, isLoad
       const today = new Date();
 
       try {
-        // Processar mês por mês
+        // Obter todas as conversões de moeda necessárias de uma vez pode ser otimizado depois,
+        // mas vamos manter a lógica por conta para simplicidade agora.
+
+        // Mapear todas as transações com datas normalizadas para facilitar comparação
+        const normalizedTransactions = transactions.map(t => ({
+          ...t,
+          normalizedDate: new Date(t.transaction_date.replace(/-/g, '/'))
+        }));
+
+        // Para cada mês no período (do passado para o presente)
+        // A lógica regressiva é eficiente se calcularmos o ponto inicial (hoje)
+        // e formos voltando no tempo? 
+        // Na verdade, para plotar o gráfico, precisamos do valor em N pontos no tempo.
+        // Ponto 1: Fim do mês X (Ex: 01/Jan a 31/Jan). 
+        // Saldo em 31/Jan = Saldo Atual (Hoje) - Transações entre (31/Jan e Hoje).
+        // Se Hoje é 15/Fev. 
+        // Saldo 31/Jan = Saldo 15/Fev - (Tx de 01/Fev a 15/Fev).
+
+        // Vamos iterar pelos meses desejados.
         for (let i = numberOfMonths - 1; i >= 0; i--) {
           const targetMonthDate = subMonths(today, i);
-          const monthStart = startOfMonth(targetMonthDate);
           const monthEnd = endOfMonth(targetMonthDate);
-          
+
           let monthNetWorthInBRL = 0;
 
-          // Processar cada conta individualmente para conversão adequada
           for (const account of accounts) {
             if (account.is_active === false) continue;
 
             const accountCurrency = account.currency || 'BRL';
-            let accountBalanceAtMonthEnd = parseFloat(account.initial_balance || 0);
-            
-            // Aplicar todas as transações até o final do mês
-            const accountTransactions = transactions.filter(t => {
-              // Usar .replace para tratar a data como local e evitar problemas de fuso horário
-              const transactionDate = new Date(t.transaction_date.replace(/-/g, '/'));
-              return transactionDate <= monthEnd && 
-                     (t.account_id === account.id || t.destination_account_id === account.id);
+
+            // PONTO DE PARTIDA: Saldo Atual da Conta (Database/Dashboard)
+            let currentBalance = parseFloat(account.current_balance);
+            if (isNaN(currentBalance)) {
+              currentBalance = parseFloat(account.initial_balance) || 0;
+            }
+
+            let historicalBalance = currentBalance;
+
+            // Lógica Regressiva: Remover transações que aconteceram DEPOIS do monthEnd até HOJE/Fim dos tempos.
+            // Ou seja, filtrar transações onde data > monthEnd.
+            // Para cada uma dessas transações, desfazer o efeito.
+
+            const transactionsAfterPeriod = normalizedTransactions.filter(t => {
+              return t.normalizedDate > monthEnd &&
+                (t.account_id === account.id || t.destination_account_id === account.id);
             });
 
-            accountTransactions.forEach(t => {
+            transactionsAfterPeriod.forEach(t => {
               const amount = parseFloat(t.amount || 0);
 
+              // Se é cartão de crédito, o saldo geralmente é positivo na UI mas representa dívida?
+              // No DB, users costumam guardar como positivo (valor da fatura) ou negativo?
+              // Baseado no NetWorthCard: "Credit cards are liabilities, so their absolute value should always be subtracted"
+              // E no código anterior, parecia tratar saldo como valor nominal.
+              // Vamos assumir que 'historicalBalance' segue a mesma convenção do 'currentBalance'.
+
+              // Logica de Desfazer (Inverse Operation):
+              // Se foi Income (recebeu): Saldo era menor -> Subtrair
+              // Se foi Expense (gastou): Saldo era maior -> Somar
+
               if (account.account_type === 'credit_card') {
-                // For credit cards, expenses increase the balance (liability)
+                // Cartão de Crédito é tricky. Geralmente Saldo aumenta com Expense e diminui com Pagamento (Transfer/Income).
+                // Se o currentBalance é 1000 (dívida), e gastou 100 hoje (expense). Ontem devia 900.
+                // Undo Expense: 1000 - 100 = 900. (Expense diminui o saldo devedor na volta)
+                // Se pagou 500 hoje (Income/Transfer). Ontem devia 1500.
+                // Undo Payment: 1000 + 500 = 1500.
+
                 if (t.account_id === account.id) {
-                  if (t.transaction_type === 'income') accountBalanceAtMonthEnd -= amount; // Payment to the card
-                  else if (t.transaction_type === 'expense') accountBalanceAtMonthEnd += amount; // Purchase
-                  else if (t.transaction_type === 'transfer') accountBalanceAtMonthEnd += amount; // Cash advance
+                  if (t.transaction_type === 'expense') {
+                    // Forward: +Dívida. Backward: -Dívida.
+                    historicalBalance -= amount;
+                  } else if (t.transaction_type === 'income') { // Pagamento/Estorno
+                    // Forward: -Dívida. Backward: +Dívida.
+                    historicalBalance += amount;
+                  } else if (t.transaction_type === 'transfer') { // Saque?
+                    // Se for 'transfer' saindo do cartão (saque cartão credito?) -> Aumenta divida
+                    // Forward: +Divida. Backward: -Divida.
+                    historicalBalance -= amount;
+                  }
+                } else if (t.destination_account_id === account.id) {
+                  // Transferencia entrando (Pagamento de fatura vindo de outra conta)
+                  // Forward: -Divida. Backward: +Divida.
+                  historicalBalance += amount;
                 }
-                // A transfer TO a credit card is likely a payment or refund
-                if (t.destination_account_id === account.id) {
-                  if (t.transaction_type === 'transfer') accountBalanceAtMonthEnd -= amount;
-                }
+
               } else {
-                // Original logic for asset accounts
+                // Contas Comuns (Checking, Investment, etc)
                 if (t.account_id === account.id) {
-                  if (t.transaction_type === 'income') accountBalanceAtMonthEnd += amount;
-                  else if (t.transaction_type === 'expense') accountBalanceAtMonthEnd -= amount;
-                  else if (t.transaction_type === 'transfer') accountBalanceAtMonthEnd -= amount;
-                }
-                if (t.destination_account_id === account.id) {
-                  if (t.transaction_type === 'transfer') accountBalanceAtMonthEnd += amount;
+                  if (t.transaction_type === 'income') {
+                    // Forward: += amount. Backward: -= amount
+                    historicalBalance -= amount;
+                  } else if (t.transaction_type === 'expense') {
+                    // Forward: -= amount. Backward: += amount
+                    historicalBalance += amount;
+                  } else if (t.transaction_type === 'transfer') {
+                    // Transferencia saindo
+                    // Forward: -= amount. Backward: += amount
+                    historicalBalance += amount;
+                  }
+                } else if (t.destination_account_id === account.id) {
+                  // Transferencia entrando
+                  // Forward: += amount. Backward: -= amount
+                  historicalBalance -= amount;
                 }
               }
             });
 
-            // Converter o saldo da conta para BRL
+            // Converter o saldo histórico calculado para BRL
             const accountBalanceInBRL = await convertCurrency(
-              accountBalanceAtMonthEnd, 
-              accountCurrency, 
+              historicalBalance,
+              accountCurrency,
               'BRL'
             );
-            
-            // Credit cards are liabilities, so their absolute value should be subtracted
+
+            // Add to Net Worth
             if (account.account_type === 'credit_card') {
+              // Subtrair dívida do patrimônio
               monthNetWorthInBRL -= Math.abs(accountBalanceInBRL);
             } else {
               monthNetWorthInBRL += accountBalanceInBRL;
             }
 
-            // Pequena pausa para não sobrecarregar as conversões
-            await new Promise(resolve => setTimeout(resolve, 10));
+            // Pequena pausa para UI responsiva
+            await new Promise(resolve => setTimeout(resolve, 5));
           }
-          
+
           data.push({
-            month: format(monthStart, "MMM/yy", { locale: ptBR }),
+            month: format(monthEnd, "MMM/yy", { locale: ptBR }), // Usar monthEnd para ser fiel à data
             patrimonio: monthNetWorthInBRL,
           });
 
-          // Pausa entre meses para distribuir o processamento
-          await new Promise(resolve => setTimeout(resolve, 100));
+          // Pausa entre meses
+          await new Promise(resolve => setTimeout(resolve, 50));
         }
 
         setChartData(data);
       } catch (error) {
-        console.error('Erro ao calcular evolução do patrimônio:', error);
+        console.error('Erro ao calcular evolução do patrimônio (Regressivo):', error);
         setChartData([]);
       }
-      
+
       setIsProcessing(false);
     };
 
@@ -191,27 +249,27 @@ export default function PatrimonyEvolutionChart({ accounts, transactions, isLoad
           <ResponsiveContainer width="100%" height={250}>
             <LineChart data={chartData} margin={{ top: 5, right: 10, left: 15, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" strokeOpacity={0.3} />
-              <XAxis 
-                dataKey="month" 
-                tick={{ fontSize: 10 }} 
-                axisLine={false} 
+              <XAxis
+                dataKey="month"
+                tick={{ fontSize: 10 }}
+                axisLine={false}
                 tickLine={false}
               />
-              <YAxis 
-                tickFormatter={formatCurrencyForAxis} 
-                tick={{ fontSize: 10 }} 
-                axisLine={false} 
+              <YAxis
+                tickFormatter={formatCurrencyForAxis}
+                tick={{ fontSize: 10 }}
+                axisLine={false}
                 tickLine={false}
                 width={70}
                 domain={['auto', 'auto']}
               />
               <Tooltip content={<CustomTooltipContent />} cursor={{ stroke: '#4ade80', strokeWidth: 1, strokeDasharray: '3 3' }} />
-              <Legend wrapperStyle={{fontSize: "12px"}} />
-              <Line 
-                type="monotone" 
-                dataKey="patrimonio" 
+              <Legend wrapperStyle={{ fontSize: "12px" }} />
+              <Line
+                type="monotone"
+                dataKey="patrimonio"
                 stroke="#16a34a"
-                strokeWidth={2} 
+                strokeWidth={2}
                 dot={{ r: 4, fill: "#16a34a", strokeWidth: 0 }}
                 activeDot={{ r: 6, fill: "#16a34a", stroke: '#dcfce7', strokeWidth: 2 }}
                 name="Patrimônio (BRL)"
