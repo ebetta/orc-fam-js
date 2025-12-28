@@ -465,15 +465,26 @@ export default function TransactionsPage() {
 
       try {
         const balancesPromises = accounts.map(async (account) => {
-          const details = await calculateAccountBalanceAndDetails(account, transactions || [], accounts, convertCurrency);
+          // Use current_balance from DB if available, otherwise fallback to initial_balance
+          // This matches the Dashboard logic and avoids client-side recalculation errors
+          let currentBalance = parseFloat(account.current_balance);
+          if (isNaN(currentBalance)) {
+            currentBalance = parseFloat(account.initial_balance) || 0;
+          }
+
+          let balanceInBRL = currentBalance;
+          if (account.currency !== "BRL") {
+            balanceInBRL = await convertCurrency(currentBalance, account.currency, "BRL", null);
+          }
+
           return {
             id: account.id,
             name: account.name,
-            balance: details.balanceInBRL,
+            balance: balanceInBRL,
             currency: "BRL",
-            original_balance: details.original_balance,
-            original_currency: details.original_currency,
-            account_type: details.account_type,
+            original_balance: currentBalance,
+            original_currency: account.currency,
+            account_type: account.account_type,
           };
         });
 
@@ -492,7 +503,7 @@ export default function TransactionsPage() {
     };
 
     calculateSummaries();
-  }, [accounts, transactions, isLoading]);
+  }, [accounts, isLoading]);
 
   const showLoadingState = isLoading || isCalculatingBalances;
 

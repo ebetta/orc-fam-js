@@ -48,36 +48,27 @@ export default function AccountBalancesSummary({ accounts, balances, totalNetWor
         return;
       }
 
-      const { data: allTransactions, error: transactionsError } = await supabase
-        .from("transactions")
-        .select("*");
-
-      if (transactionsError) {
-        console.error("Erro ao buscar transações:", transactionsError);
-        setAccountBalances(accounts.map(acc => ({
-          id: acc.id,
-          name: acc.name,
-          balance: 0,
-          currency: "BRL", // Exibição principal em BRL
-          original_balance: 0,
-          original_currency: acc.currency,
-          account_type: acc.account_type,
-          error: "Erro ao calcular saldo"
-        })));
-        setIsLoading(false);
-        return;
-      }
-
+      // If balances are not provided, calculate them from account.current_balance
+      // This avoids fetching all transactions again
       const balancesPromises = accounts.map(async (account) => {
-        const details = await calculateAccountBalanceAndDetails(account, allTransactions || [], accounts, convertCurrency);
+        let currentBalance = parseFloat(account.current_balance);
+        if (isNaN(currentBalance)) {
+          currentBalance = parseFloat(account.initial_balance) || 0;
+        }
+
+        let balanceInBRL = currentBalance;
+        if (account.currency !== "BRL") {
+          balanceInBRL = await convertCurrency(currentBalance, account.currency, "BRL", null);
+        }
+
         return {
           id: account.id,
           name: account.name,
-          balance: details.balanceInBRL, // Para exibição principal
-          currency: "BRL", // Moeda da exibição principal
-          original_balance: details.original_balance,
-          original_currency: details.original_currency,
-          account_type: details.account_type,
+          balance: balanceInBRL,
+          currency: "BRL",
+          original_balance: currentBalance,
+          original_currency: account.currency,
+          account_type: account.account_type,
         };
       });
 
