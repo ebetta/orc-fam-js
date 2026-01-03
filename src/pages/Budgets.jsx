@@ -9,7 +9,8 @@ import { useToast } from "@/components/ui/use-toast";
 import {
   startOfMonth, endOfMonth, subMonths, parseISO, isWithinInterval,
   max, min, startOfYear, endOfYear, startOfQuarter, endOfQuarter,
-  differenceInCalendarMonths, differenceInCalendarWeeks, differenceInCalendarYears
+  differenceInCalendarMonths, differenceInCalendarWeeks, differenceInCalendarYears,
+  format
 } from "date-fns";
 
 
@@ -19,31 +20,31 @@ import BudgetsList from "../components/budgets/BudgetsList";
 
 // Helper para calcular o número de períodos de um orçamento dentro do filtro
 const getNumberOfPeriods = (budget, filterStart, filterEnd) => {
-    if (!filterStart || !filterEnd) return 1; // Para o filtro "Todos os períodos"
+  if (!filterStart || !filterEnd) return 1; // Para o filtro "Todos os períodos"
 
-    // Intersecção entre o período do orçamento e o período do filtro
-    const budgetStart = max([parseISO(budget.start_date), filterStart]);
-    const budgetEnd = min([parseISO(budget.end_date), filterEnd]);
+  // Intersecção entre o período do orçamento e o período do filtro
+  const budgetStart = max([parseISO(budget.start_date), filterStart]);
+  const budgetEnd = min([parseISO(budget.end_date), filterEnd]);
 
-    if (budgetEnd < budgetStart) return 0; // Orçamento fora do período do filtro
+  if (budgetEnd < budgetStart) return 0; // Orçamento fora do período do filtro
 
-    switch (budget.period) {
-        case 'monthly':
-            return differenceInCalendarMonths(budgetEnd, budgetStart) + 1;
-        case 'weekly':
-            return differenceInCalendarWeeks(budgetEnd, budgetStart, { weekStartsOn: 1 }) + 1;
-        case 'yearly':
-            return differenceInCalendarYears(budgetEnd, budgetStart) + 1;
-        default:
-            return 1;
-    }
+  switch (budget.period) {
+    case 'monthly':
+      return differenceInCalendarMonths(budgetEnd, budgetStart) + 1;
+    case 'weekly':
+      return differenceInCalendarWeeks(budgetEnd, budgetStart, { weekStartsOn: 1 }) + 1;
+    case 'yearly':
+      return differenceInCalendarYears(budgetEnd, budgetStart) + 1;
+    default:
+      return 1;
+  }
 };
 
 export default function BudgetsPage() {
   const [budgets, setBudgets] = useState([]);
   const [tags, setTags] = useState([]);
   const [transactions, setTransactions] = useState([]);
-  
+
   const [isLoading, setIsLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingBudget, setEditingBudget] = useState(null);
@@ -52,7 +53,7 @@ export default function BudgetsPage() {
   const [filters, setFilters] = useState({
     period: "current_month",
     tagId: "all",
-    status: "all", 
+    status: "all",
   });
 
   const [groupedBudgetsForAccordion, setGroupedBudgetsForAccordion] = useState([]);
@@ -104,13 +105,13 @@ export default function BudgetsPage() {
       const [budgetsResponse, tagsResponse, transactionsResponse] = await Promise.all([
         supabase.from('budgets').select('*').order('updated_at', { ascending: false }),
         supabase.from('tags').select('*'),
-        supabase.from('transactions').select('*')
+        supabase.from('transactions').select('*').order('transaction_date', { ascending: false }).limit(5000)
       ]);
 
       if (budgetsResponse.error) throw budgetsResponse.error;
       if (tagsResponse.error) throw tagsResponse.error;
       if (transactionsResponse.error) throw transactionsResponse.error;
-      
+
       setBudgets((budgetsResponse.data || []).filter(b => b.is_active !== false));
       setTags((tagsResponse.data || []).filter(t => t.is_active !== false && (t.tag_type === 'expense' || t.tag_type === 'both')));
       setTransactions(transactionsResponse.data || []);
@@ -129,7 +130,7 @@ export default function BudgetsPage() {
   useEffect(() => {
     loadInitialData();
   }, [loadInitialData]);
-  
+
   // Efeito principal para filtrar e agrupar orçamentos baseado no período selecionado
   useEffect(() => {
     if (isLoading) return;
@@ -139,55 +140,57 @@ export default function BudgetsPage() {
     const today = new Date();
 
     switch (filters.period) {
-        case "current_month":
-            periodStart = startOfMonth(today);
-            periodEnd = endOfMonth(today);
-            break;
-        case "last_month":
-            const lastMonth = subMonths(today, 1);
-            periodStart = startOfMonth(lastMonth);
-            periodEnd = endOfMonth(lastMonth);
-            break;
-        case "two_months_ago":
-            const twoMonthsAgo = subMonths(today, 2);
-            periodStart = startOfMonth(twoMonthsAgo);
-            periodEnd = endOfMonth(twoMonthsAgo);
-            break;
-        case "current_quarter":
-            periodStart = startOfQuarter(today);
-            periodEnd = endOfQuarter(today);
-            break;
-        case "this_year":
-            periodStart = startOfYear(today);
-            periodEnd = endOfYear(today);
-            break;
-        case "all":
-        default:
-          break; 
+      case "current_month":
+        periodStart = startOfMonth(today);
+        periodEnd = endOfMonth(today);
+        break;
+      case "last_month":
+        const lastMonth = subMonths(today, 1);
+        periodStart = startOfMonth(lastMonth);
+        periodEnd = endOfMonth(lastMonth);
+        break;
+      case "two_months_ago":
+        const twoMonthsAgo = subMonths(today, 2);
+        periodStart = startOfMonth(twoMonthsAgo);
+        periodEnd = endOfMonth(twoMonthsAgo);
+        break;
+      case "current_quarter":
+        periodStart = startOfQuarter(today);
+        periodEnd = endOfQuarter(today);
+        break;
+      case "this_year":
+        periodStart = startOfYear(today);
+        periodEnd = endOfYear(today);
+        break;
+      case "all":
+      default:
+        break;
     }
 
     // 2. Filtrar transações para corresponder ao período do filtro
     const transactionsForPeriod = periodStart && periodEnd
-        ? transactions.filter(t => {
-            const transactionDate = parseISO(t.transaction_date);
-            return isWithinInterval(transactionDate, { start: periodStart, end: periodEnd });
-        })
-        : transactions;
+      ? transactions.filter(t => {
+        // Use string comparison for dates to avoid timezone issues
+        const startStr = format(periodStart, 'yyyy-MM-dd');
+        const endStr = format(periodEnd, 'yyyy-MM-dd');
+        return t.transaction_date >= startStr && t.transaction_date <= endStr;
+      })
+      : transactions;
 
     // 3. Filtrar orçamentos que são relevantes para o período do filtro
     const relevantBudgets = periodStart && periodEnd
       ? budgets.filter(budget => {
-          const budgetStart = parseISO(budget.start_date);
-          const budgetEnd = parseISO(budget.end_date);
-          return budgetStart <= periodEnd && budgetEnd >= periodStart;
-        })
+        const budgetStart = parseISO(budget.start_date);
+        const budgetEnd = parseISO(budget.end_date);
+        return budgetStart <= periodEnd && budgetEnd >= periodStart;
+      })
       : budgets;
 
     // 4. Calcular o 'gasto' e 'orçado' para cada orçamento relevante usando apenas as transações do período
     const budgetsWithCalculations = relevantBudgets.map(budget => {
       const periodsInFilter = getNumberOfPeriods(budget, periodStart, periodEnd);
       const totalBudgetedForPeriod = (parseFloat(budget.amount) || 0) * periodsInFilter;
-      
+
       return {
         ...budget,
         spent_amount: calculateSpentAmountForPeriod(budget, transactionsForPeriod, tags), // Pass allTags (renamed to tags here)
@@ -199,9 +202,9 @@ export default function BudgetsPage() {
     const totalOrcado = budgetsWithCalculations.reduce((sum, b) => sum + (b.total_budgeted_for_period || 0), 0);
     const totalGasto = budgetsWithCalculations.reduce((sum, b) => sum + (parseFloat(b.spent_amount) || 0), 0);
     setSummaryTotals({
-        orcado: totalOrcado,
-        gasto: totalGasto,
-        disponivel: totalOrcado - totalGasto,
+      orcado: totalOrcado,
+      gasto: totalGasto,
+      disponivel: totalOrcado - totalGasto,
     });
 
     // 6. Agrupar os orçamentos calculados para o Accordion
@@ -221,7 +224,7 @@ export default function BudgetsPage() {
       // Este ID (budget.tag_id) é esperado ser o UUID da tag (tags.id).
       let currentTag = tagMapById[budgetTagId];
 
-      if (!currentTag) { 
+      if (!currentTag) {
         // Se o budget.tag_id não corresponder a nenhum tags.id conhecido.
         return {
           id: `unmapped_budget_tag_${budgetTagId}`,
@@ -230,7 +233,7 @@ export default function BudgetsPage() {
           isRoot: true
         };
       }
-      
+
       // currentTag é a tag do Supabase que corresponde ao budget.tag_id (que é um tags.id).
       // A lógica de subida na hierarquia usa o campo 'parent_tag_id' (que contém o 'id' UUID do pai).
       let rootTag = currentTag;
@@ -248,21 +251,21 @@ export default function BudgetsPage() {
     budgetsWithCalculations.forEach(budget => {
       // budget.tag_id é o ID (UUID) que o orçamento usa para referenciar uma tag na tabela 'tags'.
       if (!budget.tag_id) {
-          return; // Orçamentos sem tag_id não podem ser agrupados.
+        return; // Orçamentos sem tag_id não podem ser agrupados.
       }
 
       const rootTag = getRootTagForBudget(budget.tag_id);
 
       // Agrupar pelo 'id' (UUID) da rootTag encontrada.
       if (!groups[rootTag.id]) {
-        groups[rootTag.id] = { 
-          parentTag: rootTag, 
-          budgets: [], 
-          groupTotalOrcado: 0, 
-          groupTotalGasto: 0 
+        groups[rootTag.id] = {
+          parentTag: rootTag,
+          budgets: [],
+          groupTotalOrcado: 0,
+          groupTotalGasto: 0
         };
       }
-      
+
       // Detalhes da tag específica do orçamento (usando budget.tag_id para encontrar a tag em tagMapById)
       const budgetSpecificTagDetails = tagMapById[budget.tag_id];
       groups[rootTag.id].budgets.push({
@@ -278,7 +281,7 @@ export default function BudgetsPage() {
     const processedGroups = Object.values(groups).map(group => ({
       ...group,
       groupTotalDisponivel: group.groupTotalOrcado - group.groupTotalGasto
-    })).sort((a,b) => {
+    })).sort((a, b) => {
       if (b.groupTotalGasto !== a.groupTotalGasto) {
         return b.groupTotalGasto - a.groupTotalGasto;
       }
@@ -350,7 +353,7 @@ export default function BudgetsPage() {
   };
 
   const handleDeleteBudget = async (budgetId) => {
-     try {
+    try {
       const budgetToDelete = budgets.find(b => b.id === budgetId);
       const { error } = await supabase
         .from('budgets')
@@ -375,7 +378,7 @@ export default function BudgetsPage() {
     setShowForm(false);
     setEditingBudget(null);
   };
-  
+
   return (
     <div className="p-6 space-y-8 max-w-7xl mx-auto">
       <motion.div
@@ -399,24 +402,26 @@ export default function BudgetsPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
           className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm z-40 flex justify-center items-center p-4 overflow-auto"
-          onClick={handleCancelForm} 
+          onClick={handleCancelForm}
         >
-            <div onClick={e => e.stopPropagation()} className="w-full max-w-2xl">
-                 <BudgetForm
-                    budget={editingBudget}
-                    tags={tags} // Passa as mesmas tags filtradas para o formulário
-                    onSave={handleFormSubmit}
-                    onCancel={handleCancelForm}
-                />
-            </div>
+          <div onClick={e => e.stopPropagation()} className="w-full max-w-2xl">
+            <BudgetForm
+              budget={editingBudget}
+              tags={tags} // Passa as mesmas tags filtradas para o formulário
+              onSave={handleFormSubmit}
+              onCancel={handleCancelForm}
+            />
+          </div>
         </motion.div>
       )}
-      
+
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.1 }}
       >
+
+
         <BudgetsList
           groupedBudgets={groupedBudgetsForAccordion}
           isLoading={isLoading}

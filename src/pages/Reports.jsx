@@ -9,28 +9,28 @@ import ReportsHeader from "../components/reports/ReportsHeader";
 import ReportFilters from "../components/reports/ReportFilters";
 import ExpensesByTagReport from "../components/reports/ExpensesByTagReport";
 import BudgetReport from "../components/reports/BudgetReport";
-import { startOfMonth, endOfMonth, parseISO, isWithinInterval, max, min, startOfYear, endOfYear, startOfQuarter, endOfQuarter, differenceInCalendarMonths, differenceInCalendarWeeks, differenceInCalendarYears } from "date-fns";
+import { startOfMonth, endOfMonth, parseISO, isWithinInterval, max, min, startOfYear, endOfYear, startOfQuarter, endOfQuarter, differenceInCalendarMonths, differenceInCalendarWeeks, differenceInCalendarYears, format } from "date-fns";
 
 // Helper para calcular o número de períodos de um orçamento dentro do filtro
 const getNumberOfPeriods = (budget, filterStart, filterEnd) => {
-    if (!filterStart || !filterEnd) return 1; // Para o filtro "Todos os períodos"
+  if (!filterStart || !filterEnd) return 1; // Para o filtro "Todos os períodos"
 
-    // Intersecção entre o período do orçamento e o período do filtro
-    const budgetStart = max([parseISO(budget.start_date), filterStart]);
-    const budgetEnd = min([parseISO(budget.end_date), filterEnd]);
+  // Intersecção entre o período do orçamento e o período do filtro
+  const budgetStart = max([parseISO(budget.start_date), filterStart]);
+  const budgetEnd = min([parseISO(budget.end_date), filterEnd]);
 
-    if (budgetEnd < budgetStart) return 0; // Orçamento fora do período do filtro
+  if (budgetEnd < budgetStart) return 0; // Orçamento fora do período do filtro
 
-    switch (budget.period) {
-        case 'monthly':
-            return differenceInCalendarMonths(budgetEnd, budgetStart) + 1;
-        case 'weekly':
-            return differenceInCalendarWeeks(budgetEnd, budgetStart, { weekStartsOn: 1 }) + 1;
-        case 'yearly':
-            return differenceInCalendarYears(budgetEnd, budgetStart) + 1;
-        default:
-            return 1;
-    }
+  switch (budget.period) {
+    case 'monthly':
+      return differenceInCalendarMonths(budgetEnd, budgetStart) + 1;
+    case 'weekly':
+      return differenceInCalendarWeeks(budgetEnd, budgetStart, { weekStartsOn: 1 }) + 1;
+    case 'yearly':
+      return differenceInCalendarYears(budgetEnd, budgetStart) + 1;
+    default:
+      return 1;
+  }
 };
 
 export default function ReportsPage() {
@@ -88,7 +88,7 @@ export default function ReportsPage() {
     try {
       const [tagsResponse, transactionsResponse, budgetsResponse] = await Promise.all([
         supabase.from('tags').select('*'),
-        supabase.from('transactions').select('*'),
+        supabase.from('transactions').select('*').order('transaction_date', { ascending: false }).limit(5000),
         supabase.from('budgets').select('*'),
       ]);
 
@@ -108,7 +108,7 @@ export default function ReportsPage() {
         initialSelectedTags[tag.id] = true;
       });
       setFilters(prev => ({ ...prev, selectedTags: initialSelectedTags }));
-      
+
       setAllBudgets(budgetsData);
 
     } catch (error) {
@@ -124,16 +124,25 @@ export default function ReportsPage() {
   const filteredTransactions = useMemo(() => {
     if (isLoading) return [];
     const selectedTagIds = Object.keys(filters.selectedTags).filter(id => filters.selectedTags[id]);
-    
-    return allTransactions.filter(t => {
-      // Corrige o problema de fuso horário ao analisar a data
-      const [year, month, day] = t.transaction_date.split('-').map(Number);
-      const transactionDate = new Date(year, month - 1, day);
 
-      const isAfterStart = !filters.period.from || transactionDate >= filters.period.from;
-      const isBeforeEnd = !filters.period.to || transactionDate <= filters.period.to;
+    return allTransactions.filter(t => {
+      // Use string comparison for dates to avoid timezone issues
+      const transactionDateStr = t.transaction_date;
+
+      let isAfterStart = true;
+      if (filters.period.from) {
+        const fromStr = format(filters.period.from, 'yyyy-MM-dd');
+        isAfterStart = transactionDateStr >= fromStr;
+      }
+
+      let isBeforeEnd = true;
+      if (filters.period.to) {
+        const toStr = format(filters.period.to, 'yyyy-MM-dd');
+        isBeforeEnd = transactionDateStr <= toStr;
+      }
+
       const isTagSelected = selectedTagIds.includes(t.tag_id);
-      
+
       return isAfterStart && isBeforeEnd && isTagSelected;
     });
   }, [allTransactions, filters, isLoading]);
@@ -155,26 +164,27 @@ export default function ReportsPage() {
 
     // 2. Filtrar transações para corresponder ao período do filtro
     const transactionsForPeriod = periodStart && periodEnd
-        ? allTransactions.filter(t => {
-            const transactionDate = parseISO(t.transaction_date);
-            return isWithinInterval(transactionDate, { start: periodStart, end: periodEnd });
-        })
-        : allTransactions;
+      ? allTransactions.filter(t => {
+        const startStr = format(periodStart, 'yyyy-MM-dd');
+        const endStr = format(periodEnd, 'yyyy-MM-dd');
+        return t.transaction_date >= startStr && t.transaction_date <= endStr;
+      })
+      : allTransactions;
 
     // 3. Filtrar orçamentos que são relevantes para o período do filtro
     const relevantBudgets = periodStart && periodEnd
       ? allBudgets.filter(budget => {
-          const budgetStart = parseISO(budget.start_date);
-          const budgetEnd = parseISO(budget.end_date);
-          return budgetStart <= periodEnd && budgetEnd >= periodStart;
-        })
+        const budgetStart = parseISO(budget.start_date);
+        const budgetEnd = parseISO(budget.end_date);
+        return budgetStart <= periodEnd && budgetEnd >= periodStart;
+      })
       : allBudgets;
 
     // 4. Calcular o 'gasto' e 'orçado' para cada orçamento relevante usando apenas as transações do período
     const budgetsWithCalculations = relevantBudgets.map(budget => {
       const periodsInFilter = getNumberOfPeriods(budget, periodStart, periodEnd);
       const totalBudgetedForPeriod = (parseFloat(budget.amount) || 0) * periodsInFilter;
-      
+
       return {
         ...budget,
         spent_amount: calculateSpentAmountForPeriod(budget, transactionsForPeriod, allTags), // Pass allTags
@@ -186,9 +196,9 @@ export default function ReportsPage() {
     const totalOrcado = budgetsWithCalculations.reduce((sum, b) => sum + (b.total_budgeted_for_period || 0), 0);
     const totalGasto = budgetsWithCalculations.reduce((sum, b) => sum + (parseFloat(b.spent_amount) || 0), 0);
     setSummaryTotals({
-        orcado: totalOrcado,
-        gasto: totalGasto,
-        disponivel: totalOrcado - totalGasto,
+      orcado: totalOrcado,
+      gasto: totalGasto,
+      disponivel: totalOrcado - totalGasto,
     });
 
     // 6. Agrupar os orçamentos calculados para o Accordion
@@ -205,7 +215,7 @@ export default function ReportsPage() {
     const getRootTagForBudget = (budgetTagId) => { // budgetTagId é o `budget.tag_id` que contém o UUID da tag
       let currentTag = tagMapById[budgetTagId];
 
-      if (!currentTag) { 
+      if (!currentTag) {
         return {
           id: `unmapped_budget_tag_${budgetTagId}`,
           name: 'Orçamentos (Tag do Orçamento não encontrada no mapa de tags)',
@@ -213,7 +223,7 @@ export default function ReportsPage() {
           isRoot: true
         };
       }
-      
+
       let rootTag = currentTag;
       while (rootTag.parent_tag_id && tagMapById[rootTag.parent_tag_id]) {
         const parent = tagMapById[rootTag.parent_tag_id];
@@ -227,20 +237,20 @@ export default function ReportsPage() {
 
     budgetsWithCalculations.forEach(budget => {
       if (!budget.tag_id) {
-          return; // Orçamentos sem tag_id não podem ser agrupados.
+        return; // Orçamentos sem tag_id não podem ser agrupados.
       }
 
       const rootTag = getRootTagForBudget(budget.tag_id);
 
       if (!groups[rootTag.id]) {
-        groups[rootTag.id] = { 
-          parentTag: rootTag, 
-          budgets: [], 
-          groupTotalOrcado: 0, 
-          groupTotalGasto: 0 
+        groups[rootTag.id] = {
+          parentTag: rootTag,
+          budgets: [],
+          groupTotalOrcado: 0,
+          groupTotalGasto: 0
         };
       }
-      
+
       const budgetSpecificTagDetails = tagMapById[budget.tag_id];
       groups[rootTag.id].budgets.push({
         ...budget,
@@ -254,7 +264,7 @@ export default function ReportsPage() {
     const processedGroups = Object.values(groups).map(group => ({
       ...group,
       groupTotalDisponivel: group.groupTotalOrcado - group.groupTotalGasto
-    })).sort((a,b) => {
+    })).sort((a, b) => {
       if (b.groupTotalGasto !== a.groupTotalGasto) {
         return b.groupTotalGasto - a.groupTotalGasto;
       }
@@ -280,7 +290,7 @@ export default function ReportsPage() {
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }}>
         <ReportsHeader />
       </motion.div>
-      
+
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5, delay: 0.1 }} className="flex-grow">
         <ReportFilters
           allTags={allTags}
