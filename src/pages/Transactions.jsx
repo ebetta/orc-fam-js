@@ -7,6 +7,7 @@ import { useSearchParams } from "react-router-dom"; // <<< ADICIONAR IMPORT
 import { supabase } from "@/lib/supabaseClient"; // Added
 import { motion } from "framer-motion";
 import { useToast } from "@/components/ui/use-toast";
+import { startOfDay, endOfDay, parseISO } from "date-fns";
 
 // ADICIONAR ESTE IMPORT
 import { convertCurrency } from "../components/utils/CurrencyConverter";
@@ -318,7 +319,7 @@ export default function TransactionsPage() {
       }
 
       const [transactionsResponse, accountsResponse, tagsResponse] = await Promise.all([
-        supabase.from('transactions').select('*').order('transaction_date', { ascending: false }).order('created_at', { ascending: false }).order('updated_at', { ascending: false }),
+        supabase.from('transactions').select('*').order('transaction_date', { ascending: false }).order('created_at', { ascending: false }).order('updated_at', { ascending: false }).limit(5000),
         supabase.from('accounts').select('*'),
         supabase.from('tags').select('*')
       ]);
@@ -438,18 +439,15 @@ export default function TransactionsPage() {
         (transaction.transaction_type === 'transfer' && transaction.destination_account_id === filters.accountId);
       const tagMatch = filters.tagId === "all" || transaction.tag_id === filters.tagId;
 
-      const transactionDateStr = transaction.transaction_date.split('T')[0];
-      const transactionDate = new Date(transactionDateStr + "T00:00:00"); // Normalize to start of day in local timezone
+      const transactionDate = parseISO(transaction.transaction_date);
 
       let periodMatch = true;
       if (filters.period.from) {
-        const fromDateStr = filters.period.from.split('T')[0];
-        const fromDate = new Date(fromDateStr + "T00:00:00");
+        const fromDate = startOfDay(parseISO(filters.period.from));
         periodMatch = periodMatch && transactionDate >= fromDate;
       }
       if (filters.period.to) {
-        const toDateStr = filters.period.to.split('T')[0];
-        const toDate = new Date(toDateStr + "T00:00:00");
+        const toDate = endOfDay(parseISO(filters.period.to));
         periodMatch = periodMatch && transactionDate <= toDate;
       }
 
@@ -459,6 +457,11 @@ export default function TransactionsPage() {
         (tags.find(t => t.id === transaction.tag_id)?.name.toLowerCase().includes(filters.searchTerm.toLowerCase()));
 
       return typeMatch && accountMatch && tagMatch && periodMatch && searchTermMatch;
+    }).sort((a, b) => {
+      const dateA = new Date(a.transaction_date.replace(/-/g, '/')).getTime();
+      const dateB = new Date(b.transaction_date.replace(/-/g, '/')).getTime();
+      if (dateA !== dateB) return dateB - dateA; // Descending Date
+      return (new Date(b.created_at || 0)).getTime() - (new Date(a.created_at || 0)).getTime(); // Descending CreatedAt
     });
   }, [transactions, filters, accounts, tags]);
 
@@ -575,6 +578,16 @@ export default function TransactionsPage() {
     calculateSummaries();
   }, [accounts, isLoading]);
 
+  const handleClearFilters = () => {
+    setFilters({
+      type: "all",
+      accountId: "all",
+      tagId: "all",
+      period: { from: null, to: null },
+      searchTerm: ""
+    });
+  };
+
   const showLoadingState = isLoading || isCalculatingBalances;
 
   return (
@@ -594,6 +607,7 @@ export default function TransactionsPage() {
           tags={tags}
           filters={filters}
           onFiltersChange={setFilters}
+          onClearFilters={handleClearFilters}
           transactionsCount={totalItems}
         />
       </motion.div>
