@@ -4,18 +4,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Target, Inbox, X, Printer, FileDown } from 'lucide-react';
-import { Progress } from "@/components/ui/progress";
 import { Button } from '@/components/ui/button';
+import BudgetGauge from '@/components/ui/BudgetGauge';
 import jsPDF from 'jspdf';
 import html2canvas from 'html2canvas';
 
 const formatCurrency = (amount) => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(amount);
-
-const getProgressColor = (percentage) => {
-  if (percentage > 100) return 'var(--tw-color-red-500)';
-  if (percentage >= 80) return 'var(--tw-color-yellow-500)';
-  return 'var(--tw-color-green-500)';
-};
 
 export default function BudgetReport({ groupedBudgets, summaryTotals, tags, isLoading, onClose, isPopup = false }) {
     const reportRef = useRef();
@@ -36,7 +30,7 @@ export default function BudgetReport({ groupedBudgets, summaryTotals, tags, isLo
             const imgData = canvas.toDataURL('image/png');
             const imgWidth = pdfWidth - (margin * 2);
             const imgHeight = (canvas.height * imgWidth) / canvas.width;
-            
+
             if (yPos + imgHeight > pdfHeight - margin) {
                 pdf.addPage();
                 yPos = margin;
@@ -67,7 +61,7 @@ export default function BudgetReport({ groupedBudgets, summaryTotals, tags, isLo
             if (y + groupImgHeight > pdfHeight - margin) {
                 pdf.addPage();
                 y = margin;
-                 // Readiciona o cabeçalho da tabela na nova página
+                // Readiciona o cabeçalho da tabela na nova página
                 if (tableHeaderElement) {
                     const headerCanvas = await html2canvas(tableHeaderElement, { scale: 2, useCORS: true });
                     y = addImageToPdf(headerCanvas, pdf, y);
@@ -91,7 +85,7 @@ export default function BudgetReport({ groupedBudgets, summaryTotals, tags, isLo
 
     const handlePrint = () => {
         const printContent = document.getElementById('budget-report-content');
-        
+
         const printWindow = window.open('', '_blank');
         printWindow.document.write(`
             <html>
@@ -122,9 +116,9 @@ export default function BudgetReport({ groupedBudgets, summaryTotals, tags, isLo
                         <p>Gerado em: ${new Date().toLocaleDateString('pt-BR')}</p>
                     </div>
                     ${printContent.innerHTML.replace(/<Progress[^>]*\/>/g, (match) => {
-                        // Substituir componente Progress por HTML simples para impressão
-                        return '<div class="progress-bar"><div class="progress-fill green" style="width: 50%;"></div></div>';
-                    })}
+            // Substituir componente Progress por HTML simples para impressão
+            return '<div class="progress-bar"><div class="progress-fill green" style="width: 50%;"></div></div>';
+        })}
                 </body>
             </html>
         `);
@@ -139,7 +133,7 @@ export default function BudgetReport({ groupedBudgets, summaryTotals, tags, isLo
                 <CardHeader className="border-b bg-gray-50 report-header-for-pdf">
                     <div className="flex items-center justify-between">
                         <CardTitle className="flex items-center gap-2">
-                            <Target className="w-5 h-5 text-orange-600"/>
+                            <Target className="w-5 h-5 text-orange-600" />
                             Relatório de Orçamento
                         </CardTitle>
                         {isPopup && (
@@ -160,7 +154,7 @@ export default function BudgetReport({ groupedBudgets, summaryTotals, tags, isLo
                     </div>
                 </CardHeader>
                 <CardContent className="p-0" id="budget-report-content">
-                     {isLoading ? (
+                    {isLoading ? (
                         <div className="p-6 space-y-2">
                             <Skeleton className="h-6 w-full" />
                             <Skeleton className="h-6 w-full" />
@@ -202,7 +196,13 @@ export default function BudgetReport({ groupedBudgets, summaryTotals, tags, isLo
                                                         <span className="w-2.5 h-2.5 rounded-full tag-color" style={{ backgroundColor: item.tagColor }}></span>
                                                         {item.tagName}
                                                     </div>
-                                                    <Progress value={Math.min(percentual, 100)} className="h-1.5 mt-1" style={{ '--progress-background': getProgressColor(percentual) }} />
+                                                    <div className="mt-1">
+                                                        <BudgetGauge
+                                                            spent={gasto}
+                                                            budget={orcado}
+                                                            height="h-1.5"
+                                                        />
+                                                    </div>
                                                 </TableCell>
                                                 <TableCell className="text-right">{formatCurrency(orcado)}</TableCell>
                                                 <TableCell className={`text-right ${gasto > orcado ? 'text-red-600 font-medium' : ''}`}>{formatCurrency(gasto)}</TableCell>
@@ -222,7 +222,7 @@ export default function BudgetReport({ groupedBudgets, summaryTotals, tags, isLo
                             </TableFooter>
                         </Table>
                     ) : (
-                         <div className="text-center py-12 px-6">
+                        <div className="text-center py-12 px-6">
                             <Inbox className="w-12 h-12 text-gray-300 mx-auto mb-4" />
                             <h3 className="text-lg font-medium text-gray-800">Nenhum dado encontrado</h3>
                             <p className="text-gray-500 text-sm">Nenhum orçamento encontrado para as tags selecionadas.</p>
