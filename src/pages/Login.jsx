@@ -8,9 +8,10 @@ const LoginPage = () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: window.location.origin, // Redirect back to the app's root after login
+        redirectTo: window.location.origin,
       },
     });
+
     if (error) {
       console.error('Error logging in with Google:', error);
       // You might want to show a toast notification here
