@@ -186,60 +186,93 @@ export default function BudgetsPage() {
       })
       : budgets;
 
-    // 4. Calcular o 'gasto' e 'orçado' para cada orçamento relevante usando apenas as transações do período
-    const budgetsWithCalculations = relevantBudgets.map(budget => {
-      const periodsInFilter = getNumberOfPeriods(budget, periodStart, periodEnd);
-      const totalBudgetedForPeriod = (parseFloat(budget.amount) || 0) * periodsInFilter;
+    // 4. Preparar lista unificada de orçamentos (Reais + Virtuais)
+    const allBudgetItems = [];
 
-      return {
-        ...budget,
-        spent_amount: calculateSpentAmountForPeriod(budget, transactionsForPeriod, tags), // Pass allTags (renamed to tags here)
-        total_budgeted_for_period: totalBudgetedForPeriod,
-      }
-    });
+    if (tags.length) {
+      const parentTagIds = new Set(tags.map(t => t.parent_tag_id).filter(Boolean));
+      const activeExpenseTags = tags.filter(t =>
+        t.is_active !== false &&
+        t.tag_type === 'expense' &&
+        (t.parent_tag_id || !parentTagIds.has(t.id))
+      );
 
-    // 5. Calcular os totais para o cabeçalho usando os orçamentos e gastos calculados
-    const totalOrcado = budgetsWithCalculations.reduce((sum, b) => sum + (b.total_budgeted_for_period || 0), 0);
-    const totalGasto = budgetsWithCalculations.reduce((sum, b) => sum + (parseFloat(b.spent_amount) || 0), 0);
+      activeExpenseTags.forEach(tag => {
+        // Encontrar orçamentos existentes para esta tag no período
+        const tagBudgets = relevantBudgets.filter(b => b.tag_id === tag.id);
+
+        if (tagBudgets.length > 0) {
+          // Adicionar orçamentos reais
+          tagBudgets.forEach(budget => {
+            const periodsInFilter = getNumberOfPeriods(budget, periodStart, periodEnd);
+            const totalBudgetedForPeriod = (parseFloat(budget.amount) || 0) * periodsInFilter;
+
+            allBudgetItems.push({
+              ...budget,
+              tagName: tag.name,
+              tagColor: tag.color,
+              spent_amount: calculateSpentAmountForPeriod(budget, transactionsForPeriod, tags),
+              total_budgeted_for_period: totalBudgetedForPeriod,
+              isVirtual: false
+            });
+          });
+        } else {
+          // Adicionar orçamento virtual (placeholder para a tag)
+          // Necessário para mostrar o gasto da tag mesmo sem orçamento definido
+          const virtualBudget = {
+            id: `virtual-${tag.id}`,
+            tag_id: tag.id,
+            amount: 0,
+            start_date: periodStart ? format(periodStart, 'yyyy-MM-dd') : null,
+            end_date: periodEnd ? format(periodEnd, 'yyyy-MM-dd') : null,
+            period: 'monthly',
+            tagName: tag.name,
+            tagColor: tag.color,
+            isVirtual: true,
+            is_active: true
+          };
+
+          allBudgetItems.push({
+            ...virtualBudget,
+            spent_amount: calculateSpentAmountForPeriod({ tag_id: tag.id }, transactionsForPeriod, tags),
+            total_budgeted_for_period: 0
+          });
+        }
+      });
+    }
+
+    // 5. Calcular os totais para o cabeçalho
+    const totalOrcado = allBudgetItems.reduce((sum, b) => sum + (b.total_budgeted_for_period || 0), 0);
+    const totalGasto = allBudgetItems.reduce((sum, b) => sum + (parseFloat(b.spent_amount) || 0), 0);
     setSummaryTotals({
       orcado: totalOrcado,
       gasto: totalGasto,
       disponivel: totalOrcado - totalGasto,
     });
 
-    // 6. Agrupar os orçamentos calculados para o Accordion
-    if (!tags.length || !budgetsWithCalculations.length) {
+    // 6. Agrupar os orçamentos para o Accordion
+    if (!allBudgetItems.length) {
       setGroupedBudgetsForAccordion([]);
       return;
     }
 
-    const activeExpenseTags = tags.filter(t => t.is_active !== false && (t.tag_type === 'expense' || t.tag_type === 'both'));
+    // Mapa de tags pelo ID para o agrupamento
+    const tagMapById = Object.fromEntries(tags.map(t => [t.id, t]));
 
-    // Mapa de tags pelo ID primário do Supabase (coluna 'id')
-    // Este será o único mapa necessário para tags.
-    const tagMapById = Object.fromEntries(activeExpenseTags.map(t => [t.id, t]));
-
-    const getRootTagForBudget = (budgetTagId) => { // budgetTagId é o `budget.tag_id` que contém o UUID da tag
-      // 1. Encontrar a tag específica do orçamento usando o ID fornecido pelo orçamento.
-      // Este ID (budget.tag_id) é esperado ser o UUID da tag (tags.id).
+    const getRootTagForBudget = (budgetTagId) => {
       let currentTag = tagMapById[budgetTagId];
-
       if (!currentTag) {
-        // Se o budget.tag_id não corresponder a nenhum tags.id conhecido.
         return {
           id: `unmapped_budget_tag_${budgetTagId}`,
-          name: 'Orçamentos (Tag do Orçamento não encontrada no mapa de tags)',
+          name: 'Tags Não Mapeadas',
           color: '#9ca3af',
           isRoot: true
         };
       }
 
-      // currentTag é a tag do Supabase que corresponde ao budget.tag_id (que é um tags.id).
-      // A lógica de subida na hierarquia usa o campo 'parent_tag_id' (que contém o 'id' UUID do pai).
       let rootTag = currentTag;
       while (rootTag.parent_tag_id && tagMapById[rootTag.parent_tag_id]) {
         const parent = tagMapById[rootTag.parent_tag_id];
-        // Não subir para pais que são de 'income' ou inativos.
         if (parent.tag_type === 'income' || parent.is_active === false) break;
         rootTag = parent;
       }
@@ -248,15 +281,9 @@ export default function BudgetsPage() {
 
     const groups = {};
 
-    budgetsWithCalculations.forEach(budget => {
-      // budget.tag_id é o ID (UUID) que o orçamento usa para referenciar uma tag na tabela 'tags'.
-      if (!budget.tag_id) {
-        return; // Orçamentos sem tag_id não podem ser agrupados.
-      }
+    allBudgetItems.forEach(item => {
+      const rootTag = getRootTagForBudget(item.tag_id);
 
-      const rootTag = getRootTagForBudget(budget.tag_id);
-
-      // Agrupar pelo 'id' (UUID) da rootTag encontrada.
       if (!groups[rootTag.id]) {
         groups[rootTag.id] = {
           parentTag: rootTag,
@@ -266,16 +293,9 @@ export default function BudgetsPage() {
         };
       }
 
-      // Detalhes da tag específica do orçamento (usando budget.tag_id para encontrar a tag em tagMapById)
-      const budgetSpecificTagDetails = tagMapById[budget.tag_id];
-      groups[rootTag.id].budgets.push({
-        ...budget,
-        // Usar o nome e cor da tag específica do orçamento.
-        tagName: budgetSpecificTagDetails?.name || 'Tag do Orçamento Desconhecida', // Deveria ser encontrada se budget.tag_id é um UUID válido em tagMapById
-        tagColor: budgetSpecificTagDetails?.color || '#cccccc'
-      });
-      groups[rootTag.id].groupTotalOrcado += budget.total_budgeted_for_period || 0;
-      groups[rootTag.id].groupTotalGasto += parseFloat(budget.spent_amount || 0);
+      groups[rootTag.id].budgets.push(item);
+      groups[rootTag.id].groupTotalOrcado += item.total_budgeted_for_period || 0;
+      groups[rootTag.id].groupTotalGasto += parseFloat(item.spent_amount || 0);
     });
 
     const processedGroups = Object.values(groups).map(group => ({
@@ -299,7 +319,7 @@ export default function BudgetsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("Usuário não autenticado.");
 
-      if (editingBudget) {
+      if (editingBudget && !editingBudget.isVirtual) {
         const { error } = await supabase
           .from('budgets')
           .update(dataToSave)
@@ -354,6 +374,9 @@ export default function BudgetsPage() {
 
   const handleDeleteBudget = async (budgetId) => {
     try {
+      if (typeof budgetId === 'string' && budgetId.startsWith('virtual-')) {
+        return;
+      }
       const budgetToDelete = budgets.find(b => b.id === budgetId);
       const { error } = await supabase
         .from('budgets')

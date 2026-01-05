@@ -156,7 +156,6 @@ export default function ReportsPage() {
 
     // 1. Determinar o intervalo de datas do filtro
     let periodStart, periodEnd;
-    const today = new Date();
 
     // Use filters.period.from and filters.period.to directly
     periodStart = filters.period.from;
@@ -180,45 +179,84 @@ export default function ReportsPage() {
       })
       : allBudgets;
 
-    // 4. Calcular o 'gasto' e 'orçado' para cada orçamento relevante usando apenas as transações do período
-    const budgetsWithCalculations = relevantBudgets.map(budget => {
-      const periodsInFilter = getNumberOfPeriods(budget, periodStart, periodEnd);
-      const totalBudgetedForPeriod = (parseFloat(budget.amount) || 0) * periodsInFilter;
+    // 4. Preparar lista unificada de orçamentos (Reais + Virtuais)
+    const allBudgetItems = [];
 
-      return {
-        ...budget,
-        spent_amount: calculateSpentAmountForPeriod(budget, transactionsForPeriod, allTags), // Pass allTags
-        total_budgeted_for_period: totalBudgetedForPeriod,
-      }
-    });
+    if (allTags.length) {
+      const parentTagIds = new Set(allTags.map(t => t.parent_tag_id).filter(Boolean));
+      const activeExpenseTags = allTags.filter(t =>
+        t.is_active !== false &&
+        t.tag_type === 'expense' &&
+        (t.parent_tag_id || !parentTagIds.has(t.id))
+      );
 
-    // 5. Calcular os totais para o cabeçalho usando os orçamentos e gastos calculados
-    const totalOrcado = budgetsWithCalculations.reduce((sum, b) => sum + (b.total_budgeted_for_period || 0), 0);
-    const totalGasto = budgetsWithCalculations.reduce((sum, b) => sum + (parseFloat(b.spent_amount) || 0), 0);
+      activeExpenseTags.forEach(tag => {
+        // Encontrar orçamentos existentes para esta tag no período
+        const tagBudgets = relevantBudgets.filter(b => b.tag_id === tag.id);
+
+        if (tagBudgets.length > 0) {
+          // Adicionar orçamentos reais
+          tagBudgets.forEach(budget => {
+            const periodsInFilter = getNumberOfPeriods(budget, periodStart, periodEnd);
+            const totalBudgetedForPeriod = (parseFloat(budget.amount) || 0) * periodsInFilter;
+
+            allBudgetItems.push({
+              ...budget,
+              tagName: tag.name,
+              tagColor: tag.color,
+              spent_amount: calculateSpentAmountForPeriod(budget, transactionsForPeriod, allTags),
+              total_budgeted_for_period: totalBudgetedForPeriod,
+              isVirtual: false
+            });
+          });
+        } else {
+          // Adicionar orçamento virtual (placeholder para a tag)
+          const virtualBudget = {
+            id: `virtual-${tag.id}`,
+            tag_id: tag.id,
+            amount: 0,
+            start_date: periodStart ? format(periodStart, 'yyyy-MM-dd') : null,
+            end_date: periodEnd ? format(periodEnd, 'yyyy-MM-dd') : null,
+            period: 'monthly',
+            tagName: tag.name,
+            tagColor: tag.color,
+            isVirtual: true,
+            is_active: true
+          };
+
+          allBudgetItems.push({
+            ...virtualBudget,
+            spent_amount: calculateSpentAmountForPeriod({ tag_id: tag.id }, transactionsForPeriod, allTags),
+            total_budgeted_for_period: 0
+          });
+        }
+      });
+    }
+
+    // 5. Calcular os totais para o cabeçalho
+    const totalOrcado = allBudgetItems.reduce((sum, b) => sum + (b.total_budgeted_for_period || 0), 0);
+    const totalGasto = allBudgetItems.reduce((sum, b) => sum + (parseFloat(b.spent_amount) || 0), 0);
     setSummaryTotals({
       orcado: totalOrcado,
       gasto: totalGasto,
       disponivel: totalOrcado - totalGasto,
     });
 
-    // 6. Agrupar os orçamentos calculados para o Accordion
-    if (!allTags.length || !budgetsWithCalculations.length) {
+    // 6. Agrupar os orçamentos para o Accordion
+    if (!allBudgetItems.length) {
       setGroupedBudgetsForAccordion([]);
       return;
     }
 
-    const activeExpenseTags = allTags.filter(t => t.is_active !== false && (t.tag_type === 'expense' || t.tag_type === 'both'));
+    // Mapa de tags pelo ID
+    const tagMapById = Object.fromEntries(allTags.map(t => [t.id, t]));
 
-    // Mapa de tags pelo ID primário do Supabase (coluna 'id')
-    const tagMapById = Object.fromEntries(activeExpenseTags.map(t => [t.id, t]));
-
-    const getRootTagForBudget = (budgetTagId) => { // budgetTagId é o `budget.tag_id` que contém o UUID da tag
+    const getRootTagForBudget = (budgetTagId) => {
       let currentTag = tagMapById[budgetTagId];
-
       if (!currentTag) {
         return {
           id: `unmapped_budget_tag_${budgetTagId}`,
-          name: 'Orçamentos (Tag do Orçamento não encontrada no mapa de tags)',
+          name: 'Tags Não Mapeadas',
           color: '#9ca3af',
           isRoot: true
         };
@@ -235,12 +273,8 @@ export default function ReportsPage() {
 
     const groups = {};
 
-    budgetsWithCalculations.forEach(budget => {
-      if (!budget.tag_id) {
-        return; // Orçamentos sem tag_id não podem ser agrupados.
-      }
-
-      const rootTag = getRootTagForBudget(budget.tag_id);
+    allBudgetItems.forEach(item => {
+      const rootTag = getRootTagForBudget(item.tag_id);
 
       if (!groups[rootTag.id]) {
         groups[rootTag.id] = {
@@ -251,14 +285,9 @@ export default function ReportsPage() {
         };
       }
 
-      const budgetSpecificTagDetails = tagMapById[budget.tag_id];
-      groups[rootTag.id].budgets.push({
-        ...budget,
-        tagName: budgetSpecificTagDetails?.name || 'Tag do Orçamento Desconhecida',
-        tagColor: budgetSpecificTagDetails?.color || '#cccccc'
-      });
-      groups[rootTag.id].groupTotalOrcado += budget.total_budgeted_for_period || 0;
-      groups[rootTag.id].groupTotalGasto += parseFloat(budget.spent_amount || 0);
+      groups[rootTag.id].budgets.push(item);
+      groups[rootTag.id].groupTotalOrcado += item.total_budgeted_for_period || 0;
+      groups[rootTag.id].groupTotalGasto += parseFloat(item.spent_amount || 0);
     });
 
     const processedGroups = Object.values(groups).map(group => ({
