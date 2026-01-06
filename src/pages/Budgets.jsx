@@ -211,6 +211,7 @@ export default function BudgetsPage() {
               ...budget,
               tagName: tag.name,
               tagColor: tag.color,
+              tagIcon: tag.icon,
               spent_amount: calculateSpentAmountForPeriod(budget, transactionsForPeriod, tags),
               total_budgeted_for_period: totalBudgetedForPeriod,
               isVirtual: false
@@ -228,6 +229,7 @@ export default function BudgetsPage() {
             period: 'monthly',
             tagName: tag.name,
             tagColor: tag.color,
+            tagIcon: tag.icon,
             isVirtual: true,
             is_active: true
           };

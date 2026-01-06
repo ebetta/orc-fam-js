@@ -32,6 +32,42 @@ import {
 import { format } from "date-fns";
 import BudgetGauge from "@/components/ui/BudgetGauge";
 
+import * as LucideIcons from "lucide-react";
+
+// Função para obter o ícone dinamicamente de forma segura (copiada de TagsList)
+const getDynamicIcon = (iconNameString) => {
+  if (typeof iconNameString !== 'string' || !iconNameString.trim()) {
+    return TagIconLucide;
+  }
+
+  const name = iconNameString.trim();
+
+  if (!/^[A-Za-z0-9-]+$/.test(name)) {
+    return TagIconLucide;
+  }
+
+  if (Object.prototype.hasOwnProperty.call(LucideIcons, name)) {
+    const IconComponent = LucideIcons[name];
+    if (IconComponent && (typeof IconComponent === 'object' || typeof IconComponent === 'function')) {
+      return IconComponent;
+    }
+  }
+
+  const pascalCaseName = name
+    .split('-')
+    .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+    .join('');
+
+  if (Object.prototype.hasOwnProperty.call(LucideIcons, pascalCaseName)) {
+    const IconComponent = LucideIcons[pascalCaseName];
+    if (IconComponent && (typeof IconComponent === 'object' || typeof IconComponent === 'function')) {
+      return IconComponent;
+    }
+  }
+
+  return TagIconLucide;
+};
+
 const formatCurrency = (amount) => {
   return new Intl.NumberFormat('pt-BR', {
     style: 'currency',
@@ -131,6 +167,8 @@ export default function BudgetsList({
   return (
     <Accordion type="multiple" className="w-full space-y-4">
       {groupedBudgets.map((group, groupIndex) => {
+        const IconComponent = getDynamicIcon(group.parentTag.icon);
+
         return (
           <AccordionItem value={`group-${group.parentTag.id || groupIndex}`} key={group.parentTag.id || groupIndex} className="bg-white shadow-lg rounded-xl border overflow-hidden">
             <AccordionTrigger className="p-6 hover:bg-gray-50 transition-colors">
@@ -138,9 +176,11 @@ export default function BudgetsList({
                 <div className="flex flex-col md:flex-row items-start md:items-center justify-between w-full gap-4">
                   <div className="flex items-center gap-3 flex-1">
                     <div
-                      className="w-3 h-6 rounded-sm shrink-0"
+                      className="w-10 h-10 rounded-md flex items-center justify-center shrink-0 p-2 border border-gray-100 shadow-sm"
                       style={{ backgroundColor: group.parentTag.color || '#A1A1AA' }}
-                    />
+                    >
+                      <IconComponent className="w-full h-full text-white" />
+                    </div>
                     <h3 className="text-lg font-semibold text-gray-800 text-left">{group.parentTag.name}</h3>
                     <Badge variant="outline">{group.budgets.length} orçamento{group.budgets.length !== 1 ? 's' : ''}</Badge>
                   </div>
@@ -192,12 +232,18 @@ export default function BudgetsList({
                       const individualSpent = budget.spent_amount || 0;
                       const individualTotal = budget.total_budgeted_for_period ?? budget.amount ?? 0;
                       const individualDisponivel = individualTotal - individualSpent;
+                      const ItemIconComponent = getDynamicIcon(budget.tagIcon);
 
                       return (
                         <TableRow key={budget.id} className="hover:bg-gray-100">
                           <TableCell className="pl-6">
-                            <div className="flex items-center gap-1.5 text-sm">
-                              <div className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: budget.tagColor }} />
+                            <div className="flex items-center gap-2 text-sm">
+                              <div
+                                className="w-6 h-6 rounded-md flex items-center justify-center shrink-0 p-1"
+                                style={{ backgroundColor: budget.tagColor }}
+                              >
+                                <ItemIconComponent className="w-full h-full text-white" />
+                              </div>
                               {budget.tagName}
                             </div>
                           </TableCell>
