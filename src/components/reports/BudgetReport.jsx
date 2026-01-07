@@ -1,5 +1,5 @@
 
-import React, { useRef } from 'react';
+import React, { useRef, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -15,7 +15,7 @@ export default function BudgetReport({ groupedBudgets, summaryTotals, tags, isLo
     const reportRef = useRef();
     const footerRef = useRef();
 
-    const handleExportPDF = async () => {
+    const handleExportPDF = useCallback(async () => {
         const input = reportRef.current;
         const buttons = input.querySelector('.report-buttons');
         if (buttons) buttons.style.display = 'none';
@@ -81,9 +81,9 @@ export default function BudgetReport({ groupedBudgets, summaryTotals, tags, isLo
         const now = new Date();
         const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
         pdf.save(`relatorio_orcamento_${timestamp}.pdf`);
-    };
+    }, []);
 
-    const handlePrint = () => {
+    const handlePrint = useCallback(() => {
         const printContent = document.getElementById('budget-report-content');
 
         const printWindow = window.open('', '_blank');
@@ -125,7 +125,24 @@ export default function BudgetReport({ groupedBudgets, summaryTotals, tags, isLo
         printWindow.document.close();
         printWindow.print();
         printWindow.close();
-    };
+    }, []);
+
+    // Listen for custom events from parent component
+    useEffect(() => {
+        const reportContent = document.getElementById('budget-report-content');
+        if (reportContent) {
+            const handleExportEvent = () => handleExportPDF();
+            const handlePrintEvent = () => handlePrint();
+
+            reportContent.addEventListener('exportPDF', handleExportEvent);
+            reportContent.addEventListener('printReport', handlePrintEvent);
+
+            return () => {
+                reportContent.removeEventListener('exportPDF', handleExportEvent);
+                reportContent.removeEventListener('printReport', handlePrintEvent);
+            };
+        }
+    }, [handleExportPDF, handlePrint]);
 
     return (
         <div ref={reportRef}>
@@ -170,48 +187,58 @@ export default function BudgetReport({ groupedBudgets, summaryTotals, tags, isLo
                                     <TableHead className="text-right">Disponível</TableHead>
                                 </TableRow>
                             </TableHeader>
-                            {groupedBudgets.map(group => (
-                                <TableBody key={group.parentTag.id} className="budget-group">
-                                    <TableRow className="bg-gray-100 hover:bg-gray-100">
-                                        <TableCell colSpan="1" className="font-bold text-gray-700">
-                                            <div className="flex items-center gap-2">
-                                                <span className="w-3 h-3 rounded-full" style={{ backgroundColor: group.parentTag.color }}></span>
-                                                {group.parentTag.name}
-                                            </div>
-                                        </TableCell>
-                                        <TableCell className="text-right font-bold text-gray-700">{formatCurrency(group.groupTotalOrcado)}</TableCell>
-                                        <TableCell className="text-right font-bold text-gray-700">{formatCurrency(group.groupTotalGasto)}</TableCell>
-                                        <TableCell className={`text-right font-bold ${group.groupTotalDisponivel < 0 ? 'text-red-600' : 'text-green-600'}`}>{formatCurrency(group.groupTotalDisponivel)}</TableCell>
-                                    </TableRow>
-                                    {group.budgets.map(item => {
-                                        const orcado = item.total_budgeted_for_period || 0;
-                                        const gasto = item.spent_amount || 0;
-                                        const disponivel = orcado - gasto;
-                                        const percentual = orcado > 0 ? (gasto / orcado) * 100 : 0;
+                            {groupedBudgets
+                                .filter(group => group.groupTotalOrcado !== 0 || group.groupTotalGasto !== 0)
+                                .map(group => (
+                                    <TableBody key={group.parentTag.id} className="budget-group">
+                                        <TableRow className="bg-gray-100 hover:bg-gray-100">
+                                            <TableCell colSpan="1" className="font-bold text-gray-700">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="w-3 h-3 rounded-full" style={{ backgroundColor: group.parentTag.color }}></span>
+                                                    {group.parentTag.name}
+                                                </div>
+                                                <div className="mt-1">
+                                                    <BudgetGauge
+                                                        spent={group.groupTotalGasto}
+                                                        budget={group.groupTotalOrcado}
+                                                        height="h-1.5"
+                                                    />
+                                                </div>
+                                            </TableCell>
+                                            <TableCell className="text-right font-bold text-gray-700">{formatCurrency(group.groupTotalOrcado)}</TableCell>
+                                            <TableCell className="text-right font-bold text-gray-700">{formatCurrency(group.groupTotalGasto)}</TableCell>
+                                            <TableCell className={`text-right font-bold ${group.groupTotalDisponivel < 0 ? 'text-red-600' : 'text-green-600'}`}>{formatCurrency(group.groupTotalDisponivel)}</TableCell>
+                                        </TableRow>
+                                        {group.budgets
+                                            .filter(item => (item.total_budgeted_for_period || 0) !== 0 || (item.spent_amount || 0) !== 0)
+                                            .map(item => {
+                                                const orcado = item.total_budgeted_for_period || 0;
+                                                const gasto = item.spent_amount || 0;
+                                                const disponivel = orcado - gasto;
 
-                                        return (
-                                            <TableRow key={item.id}>
-                                                <TableCell className="pl-8">
-                                                    <div className="font-medium flex items-center gap-2">
-                                                        <span className="w-2.5 h-2.5 rounded-full tag-color" style={{ backgroundColor: item.tagColor }}></span>
-                                                        {item.tagName}
-                                                    </div>
-                                                    <div className="mt-1">
-                                                        <BudgetGauge
-                                                            spent={gasto}
-                                                            budget={orcado}
-                                                            height="h-1.5"
-                                                        />
-                                                    </div>
-                                                </TableCell>
-                                                <TableCell className="text-right">{formatCurrency(orcado)}</TableCell>
-                                                <TableCell className={`text-right ${gasto > orcado ? 'text-red-600 font-medium' : ''}`}>{formatCurrency(gasto)}</TableCell>
-                                                <TableCell className={`text-right ${disponivel < 0 ? 'text-red-600 font-medium' : 'text-green-600'}`}>{formatCurrency(disponivel)}</TableCell>
-                                            </TableRow>
-                                        );
-                                    })}
-                                </TableBody>
-                            ))}
+                                                return (
+                                                    <TableRow key={item.id}>
+                                                        <TableCell className="pl-8">
+                                                            <div className="font-medium flex items-center gap-2">
+                                                                <span className="w-2.5 h-2.5 rounded-full tag-color" style={{ backgroundColor: item.tagColor }}></span>
+                                                                {item.tagName}
+                                                            </div>
+                                                            <div className="mt-1">
+                                                                <BudgetGauge
+                                                                    spent={gasto}
+                                                                    budget={orcado}
+                                                                    height="h-1.5"
+                                                                />
+                                                            </div>
+                                                        </TableCell>
+                                                        <TableCell className="text-right">{formatCurrency(orcado)}</TableCell>
+                                                        <TableCell className={`text-right ${gasto > orcado ? 'text-red-600 font-medium' : ''}`}>{formatCurrency(gasto)}</TableCell>
+                                                        <TableCell className={`text-right ${disponivel < 0 ? 'text-red-600 font-medium' : 'text-green-600'}`}>{formatCurrency(disponivel)}</TableCell>
+                                                    </TableRow>
+                                                );
+                                            })}
+                                    </TableBody>
+                                ))}
                             <TableFooter ref={footerRef}>
                                 <TableRow className="bg-gray-50 hover:bg-gray-50 footer">
                                     <TableCell className="font-bold">Total Geral</TableCell>
@@ -230,6 +257,6 @@ export default function BudgetReport({ groupedBudgets, summaryTotals, tags, isLo
                     )}
                 </CardContent>
             </Card>
-        </div>
+        </div >
     );
 }

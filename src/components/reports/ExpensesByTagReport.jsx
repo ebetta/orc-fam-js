@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, TableFooter } from '@/components/ui/table';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -34,7 +34,7 @@ export default function ExpensesByTagReport({ transactions, tags, isLoading, onC
 
     const totalExpenses = reportData.reduce((sum, item) => sum + item.total, 0);
 
-    const handleExportPDF = () => {
+    const handleExportPDF = React.useCallback(() => {
         const input = reportRef.current;
         const buttons = input.querySelector('.report-buttons');
         if (buttons) buttons.style.display = 'none';
@@ -58,7 +58,7 @@ export default function ExpensesByTagReport({ transactions, tags, isLoading, onC
 
             const canvasWidth = canvas.width;
             const canvasHeight = canvas.height;
-            
+
             const ratio = canvasWidth / canvasHeight;
             const imgWidth = pdfWidth;
             const imgHeight = imgWidth / ratio;
@@ -80,12 +80,11 @@ export default function ExpensesByTagReport({ transactions, tags, isLoading, onC
             const timestamp = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}${String(now.getSeconds()).padStart(2, '0')}`;
             pdf.save(`relatorio_despesas_por_tag_${timestamp}.pdf`);
         });
-    };
+    }, []);
 
-    const handlePrint = () => {
+    const handlePrint = React.useCallback(() => {
         const printContent = document.getElementById('expenses-report-content');
-        const originalContent = document.body.innerHTML;
-        
+
         const printWindow = window.open('', '_blank');
         printWindow.document.write(`
             <html>
@@ -115,7 +114,24 @@ export default function ExpensesByTagReport({ transactions, tags, isLoading, onC
         printWindow.document.close();
         printWindow.print();
         printWindow.close();
-    };
+    }, []);
+
+    // Listen for custom events from parent component
+    useEffect(() => {
+        const reportContent = document.getElementById('expenses-report-content');
+        if (reportContent) {
+            const handleExportEvent = () => handleExportPDF();
+            const handlePrintEvent = () => handlePrint();
+
+            reportContent.addEventListener('exportPDF', handleExportEvent);
+            reportContent.addEventListener('printReport', handlePrintEvent);
+
+            return () => {
+                reportContent.removeEventListener('exportPDF', handleExportEvent);
+                reportContent.removeEventListener('printReport', handlePrintEvent);
+            };
+        }
+    }, [handleExportPDF, handlePrint]);
 
     return (
         <div ref={reportRef}>
@@ -123,7 +139,7 @@ export default function ExpensesByTagReport({ transactions, tags, isLoading, onC
                 <CardHeader className="border-b bg-gray-50">
                     <div className="flex items-center justify-between">
                         <CardTitle className="flex items-center gap-2">
-                            <TrendingDown className="w-5 h-5 text-red-600"/>
+                            <TrendingDown className="w-5 h-5 text-red-600" />
                             Despesas por Tags
                         </CardTitle>
                         {isPopup && (
@@ -163,8 +179,8 @@ export default function ExpensesByTagReport({ transactions, tags, isLoading, onC
                                 {reportData.map(item => (
                                     <TableRow key={item.name}>
                                         <TableCell className="font-medium flex items-center gap-2">
-                                           <span className="w-2.5 h-2.5 rounded-full tag-color" style={{backgroundColor: item.color}}></span>
-                                           {item.name}
+                                            <span className="w-2.5 h-2.5 rounded-full tag-color" style={{ backgroundColor: item.color }}></span>
+                                            {item.name}
                                         </TableCell>
                                         <TableCell className="text-center">{item.count}</TableCell>
                                         <TableCell className="text-right">{formatCurrency(item.total)}</TableCell>

@@ -4,6 +4,8 @@ import React, { useState, useEffect, useMemo, useCallback } from "react";
 // import { Budget } from "@/api/entities"; // Removed
 import { supabase } from "@/lib/supabaseClient"; // Added
 import { motion } from "framer-motion";
+import { FileDown, Printer, X } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 import ReportsHeader from "../components/reports/ReportsHeader";
 import ReportFilters from "../components/reports/ReportFilters";
@@ -332,31 +334,91 @@ export default function ReportsPage() {
 
       {/* Popup para Relatório de Despesas */}
       {showExpensesReport && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm z-50 flex justify-center items-center p-4 overflow-auto">
-          <div className="w-full max-w-4xl max-h-[90vh] overflow-auto">
-            <ExpensesByTagReport
-              transactions={filteredTransactions}
-              tags={allTags}
-              isLoading={isLoading}
-              onClose={() => setShowExpensesReport(false)}
-              isPopup={true}
-            />
+        <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+          <div className="w-full max-w-4xl max-h-[90vh] bg-white rounded-lg shadow-xl flex flex-col">
+            {/* Header fixo com botões */}
+            <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50 rounded-t-lg flex-shrink-0">
+              <span className="font-semibold text-gray-700">Ações do Relatório</span>
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="icon" onClick={() => {
+                  const reportContent = document.getElementById('expenses-report-content');
+                  if (reportContent) {
+                    const event = new CustomEvent('exportPDF');
+                    reportContent.dispatchEvent(event);
+                  }
+                }} title="Salvar como PDF">
+                  <FileDown className="w-5 h-5" />
+                </Button>
+                <Button variant="ghost" size="icon" onClick={() => {
+                  const reportContent = document.getElementById('expenses-report-content');
+                  if (reportContent) {
+                    const event = new CustomEvent('printReport');
+                    reportContent.dispatchEvent(event);
+                  }
+                }} title="Imprimir relatório">
+                  <Printer className="w-5 h-5" />
+                </Button>
+                <Button variant="ghost" size="icon" onClick={() => setShowExpensesReport(false)}>
+                  <X className="w-5 h-5" />
+                </Button>
+              </div>
+            </div>
+            {/* Conteúdo com scroll */}
+            <div className="overflow-auto flex-grow">
+              <ExpensesByTagReport
+                transactions={filteredTransactions}
+                tags={allTags}
+                isLoading={isLoading}
+                onClose={() => setShowExpensesReport(false)}
+                isPopup={false}
+              />
+            </div>
           </div>
         </div>
       )}
 
       {/* Popup para Relatório de Orçamento */}
       {showBudgetReport && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm z-50 flex justify-center items-center p-4 overflow-auto">
-          <div className="w-full max-w-4xl max-h-[90vh] overflow-auto">
-            <BudgetReport
-              groupedBudgets={groupedBudgetsForAccordion}
-              summaryTotals={summaryTotals}
-              tags={allTags}
-              isLoading={isLoading}
-              onClose={() => setShowBudgetReport(false)}
-              isPopup={true}
-            />
+        <div className="fixed inset-0 bg-black bg-opacity-50 backdrop-blur-sm z-50 flex justify-center items-center p-4">
+          <div className="w-full max-w-4xl max-h-[90vh] bg-white rounded-lg shadow-xl flex flex-col">
+            {/* Header fixo com botões */}
+            <div className="flex items-center justify-between px-4 py-3 border-b bg-gray-50 rounded-t-lg flex-shrink-0">
+              <span className="font-semibold text-gray-700">Ações do Relatório</span>
+              <div className="flex items-center gap-2">
+                <Button variant="ghost" size="icon" onClick={() => {
+                  const reportContent = document.getElementById('budget-report-content');
+                  if (reportContent) {
+                    const event = new CustomEvent('exportPDF');
+                    reportContent.dispatchEvent(event);
+                  }
+                }} title="Salvar como PDF">
+                  <FileDown className="w-5 h-5" />
+                </Button>
+                <Button variant="ghost" size="icon" onClick={() => {
+                  const reportContent = document.getElementById('budget-report-content');
+                  if (reportContent) {
+                    const event = new CustomEvent('printReport');
+                    reportContent.dispatchEvent(event);
+                  }
+                }} title="Imprimir relatório">
+                  <Printer className="w-5 h-5" />
+                </Button>
+                <Button variant="ghost" size="icon" onClick={() => setShowBudgetReport(false)}>
+                  <X className="w-5 h-5" />
+                </Button>
+              </div>
+            </div>
+            {/* Conteúdo com scroll */}
+            <div className="overflow-auto flex-grow">
+              <BudgetReport
+                groupedBudgets={groupedBudgetsForAccordion}
+                summaryTotals={summaryTotals}
+                tags={allTags}
+                isLoading={isLoading}
+                onClose={() => setShowBudgetReport(false)}
+                isPopup={false}
+              />
+            </div>
           </div>
         </div>
       )}
