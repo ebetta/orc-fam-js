@@ -53,14 +53,14 @@ export default function TransactionForm({ transaction, accounts, tags, onSave, o
     // definir o `tagSearchValue` para o nome da tag para exibição correta no combobox.
     const currentTagId = transaction?.tag_id; // Use the direct tag_id
     if (currentTagId) {
-        const currentTagObject = tags.find(t => t.id === currentTagId);
-        if (currentTagObject) {
-            setTagSearchValue(currentTagObject.name);
-        } else {
-             setTagSearchValue(""); // Tag não encontrada ou nula
-        }
+      const currentTagObject = tags.find(t => t.id === currentTagId);
+      if (currentTagObject) {
+        setTagSearchValue(currentTagObject.name);
+      } else {
+        setTagSearchValue(""); // Tag não encontrada ou nula
+      }
     } else {
-        setTagSearchValue("");
+      setTagSearchValue("");
     }
   }, [transaction, accounts, tags]);
 
@@ -104,7 +104,7 @@ export default function TransactionForm({ transaction, accounts, tags, onSave, o
       [field]: value
     }));
   };
-  
+
   const handleDateChange = (date) => {
     handleInputChange("transaction_date", format(date, "yyyy-MM-dd"));
   };
@@ -113,10 +113,10 @@ export default function TransactionForm({ transaction, accounts, tags, onSave, o
   const selectedAccount = accounts.find(acc => acc.id === formData.account_id);
   const selectedAccountCurrency = selectedAccount?.currency || 'BRL';
 
-  const filteredTags = tags.filter(tag => 
+  const filteredTags = tags.filter(tag =>
     tag.name.toLowerCase().includes(tagSearchValue.toLowerCase())
   );
-  
+
   const selectedTag = tags.find(t => t.id === formData.tag_id);
 
   return (
@@ -134,7 +134,7 @@ export default function TransactionForm({ transaction, accounts, tags, onSave, o
           </Button>
         </div>
       </CardHeader>
-      
+
       <CardContent className="p-8 overflow-y-auto flex-grow">
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-2">
@@ -143,6 +143,7 @@ export default function TransactionForm({ transaction, accounts, tags, onSave, o
             </Label>
             <Input
               id="description"
+              autoFocus
               value={formData.description}
               onChange={(e) => handleInputChange("description", e.target.value)}
               placeholder="Ex: Supermercado, Salário"
@@ -151,56 +152,6 @@ export default function TransactionForm({ transaction, accounts, tags, onSave, o
             />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-2">
-              <Label htmlFor="amount" className="text-sm font-medium">
-                Valor * {selectedAccountCurrency !== 'BRL' && (
-                  <span className="text-sm text-gray-500">({selectedAccountCurrency})</span>
-                )}
-              </Label>
-              <Input
-                id="amount"
-                type="number"
-                step="0.01"
-                value={formData.amount}
-                onChange={(e) => handleInputChange("amount", e.target.value)}
-                placeholder={selectedAccountCurrency === 'USD' ? '0.00' : selectedAccountCurrency === 'EUR' ? '0,00' : '0,00'}
-                required
-                className="h-12"
-              />
-              {selectedAccountCurrency !== 'BRL' && (
-                <p className="text-xs text-gray-500">
-                  Valor será convertido para BRL nos cálculos gerais usando a cotação atual
-                </p>
-              )}
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="transaction_date" className="text-sm font-medium">
-                Data *
-              </Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className="h-12 w-full justify-start text-left font-normal"
-                  >
-                    <CalendarIconLucide className="mr-2 h-4 w-4" />
-                    {formData.transaction_date ? format(parseISO(formData.transaction_date), "dd/MM/yyyy") : <span>Escolha uma data</span>}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0">
-                  <Calendar
-                    mode="single"
-                    selected={formData.transaction_date ? parseISO(formData.transaction_date) : undefined}
-                    onSelect={handleDateChange}
-                    initialFocus
-                  />
-                </PopoverContent>
-              </Popover>
-            </div>
-          </div>
-          
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2">
               <Label htmlFor="transaction_type" className="text-sm font-medium">
@@ -274,7 +225,58 @@ export default function TransactionForm({ transaction, accounts, tags, onSave, o
               )}
             </div>
           )}
-          
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="space-y-2">
+              <Label htmlFor="amount" className="text-sm font-medium">
+                Valor * {selectedAccountCurrency !== 'BRL' && (
+                  <span className="text-sm text-gray-500">({selectedAccountCurrency})</span>
+                )}
+              </Label>
+              <Input
+                id="amount"
+                type="number"
+                step="0.01"
+                value={formData.amount}
+                onChange={(e) => handleInputChange("amount", e.target.value)}
+                placeholder={selectedAccountCurrency === 'USD' ? '0.00' : selectedAccountCurrency === 'EUR' ? '0,00' : '0,00'}
+                required
+                className="h-12"
+              />
+              {selectedAccountCurrency !== 'BRL' && (
+                <p className="text-xs text-gray-500">
+                  Valor será convertido para BRL nos cálculos gerais usando a cotação atual
+                </p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="transaction_date" className="text-sm font-medium">
+                Data *
+              </Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="h-12 w-full justify-start text-left font-normal"
+                  >
+                    <CalendarIconLucide className="mr-2 h-4 w-4" />
+                    {formData.transaction_date ? format(parseISO(formData.transaction_date), "dd/MM/yyyy") : <span>Escolha uma data</span>}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0">
+                  <Calendar
+                    mode="single"
+                    selected={formData.transaction_date ? parseISO(formData.transaction_date) : undefined}
+                    onSelect={handleDateChange}
+                    initialFocus
+                  />
+                </PopoverContent>
+              </Popover>
+            </div>
+          </div>
+
+
           <div className="space-y-2">
             <Label htmlFor="tag_id" className="text-sm font-medium">
               Tag (Opcional)
@@ -293,15 +295,15 @@ export default function TransactionForm({ transaction, accounts, tags, onSave, o
               </PopoverTrigger>
               <PopoverContent className="w-[--radix-popover-trigger-width] p-0">
                 <Command>
-                  <CommandInput 
-                    placeholder="Buscar tag..." 
+                  <CommandInput
+                    placeholder="Buscar tag..."
                     value={tagSearchValue}
                     onValueChange={setTagSearchValue}
                   />
                   <CommandList>
                     <CommandEmpty>Nenhuma tag encontrada.</CommandEmpty>
                     <CommandGroup>
-                       <CommandItem
+                      <CommandItem
                         key="no-tag"
                         value=""
                         onSelect={() => {
