@@ -83,25 +83,25 @@ export default function NetWorthCard({ accounts, isLoading, customNetWorth }) {
   };
 
   return (
-    <Card className="bg-white shadow-lg border-0 overflow-hidden">
-      <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b">
+    <Card className="bg-white shadow-lg border-0 overflow-hidden h-full flex flex-col">
+      <CardHeader className="bg-gradient-to-r from-blue-50 to-indigo-50 border-b py-3">
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle className="text-xl font-bold text-gray-900 flex items-center gap-2">
-              <div className="p-2 bg-blue-100 rounded-lg">
-                <Wallet className="w-5 h-5 text-blue-600" />
+            <CardTitle className="text-base font-semibold text-gray-900 flex items-center gap-2">
+              <div className="p-1.5 bg-blue-100 rounded-lg">
+                <Wallet className="w-4 h-4 text-blue-600" />
               </div>
               Patrimônio Líquido
             </CardTitle>
-            <p className="text-gray-600 mt-1">Saldo total convertido para BRL</p>
+            <p className="text-gray-500 text-xs mt-0.5">Saldo total convertido para BRL</p>
           </div>
-          <div className="p-3 bg-blue-500 rounded-full">
-            <TrendingUp className="w-6 h-6 text-white" />
+          <div className="p-2 bg-blue-500 rounded-full">
+            <TrendingUp className="w-4 h-4 text-white" />
           </div>
         </div>
       </CardHeader>
 
-      <CardContent className="p-8">
+      <CardContent className="p-5 flex-grow flex flex-col justify-center">
         {isLoading || isConverting ? (
           <div className="space-y-4">
             <div className="flex items-center gap-2">
@@ -122,7 +122,7 @@ export default function NetWorthCard({ accounts, isLoading, customNetWorth }) {
             transition={{ duration: 0.5 }}
           >
             <div
-              className={`text-4xl font-bold mb-2 cursor-pointer hover:text-blue-600 transition-colors duration-200 ${convertedNetWorth < 0 ? 'text-red-600' : 'text-gray-900'}`}
+              className={`text-3xl font-bold mb-2 cursor-pointer hover:text-blue-600 transition-colors duration-200 ${convertedNetWorth < 0 ? 'text-red-600' : 'text-gray-900'}`}
               onClick={handleNetWorthClick}
               title="Clique para ver todas as transações"
             >

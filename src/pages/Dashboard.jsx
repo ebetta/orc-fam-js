@@ -14,6 +14,7 @@ import AccountsList from "../components/dashboard/AccountsList";
 
 import ExpensesChart from "../components/dashboard/ExpensesChart";
 import PatrimonyEvolutionChart from "../components/dashboard/PatrimonyEvolutionChart";
+import MonthlyExpensesChart from "../components/dashboard/MonthlyExpensesChart";
 
 export default function Dashboard() {
   const [accounts, setAccounts] = useState([]);
@@ -150,26 +151,41 @@ export default function Dashboard() {
         </motion.div>
       </div>
 
-      {/* Card de Patrimônio Líquido Total */}
-       <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, delay: 0.3 }}
-      >
-        <NetWorthCard 
-          accounts={accounts}
-          isLoading={isLoading}
-        />
-      </motion.div>
+      {/* Linha inferior: Patrimônio Líquido (esquerda) + Despesas Mensais (direita) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.3 }}
+          className="h-full"
+        >
+          <NetWorthCard
+            accounts={accounts}
+            isLoading={isLoading}
+          />
+        </motion.div>
+
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.4 }}
+          className="h-full"
+        >
+          <MonthlyExpensesChart
+            transactions={allTransactions}
+            isLoading={isLoading}
+          />
+        </motion.div>
+      </div>
 
       {/* Grid para Lista de Contas */}
       <div className="grid grid-cols-1 gap-6">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.4 }}
+          transition={{ duration: 0.5, delay: 0.5 }}
         >
-          <AccountsList 
+          <AccountsList
             groupedAccounts={groupedAccounts}
             isLoading={isLoading}
           />
